@@ -2,6 +2,12 @@
 name = "clipboardstealer"
 version = "0.1.0"
 edition = "2021"
+authors = ["Frank Schwidom"]
+description = "X11 Clipboardmanager which enforces the user choice"
+license = "Apache-2"
+license-file = "LICENSE"
+homepage = "https://github.com/schwidom/clipboardstealer"
+readme = "README.txt"
 
 [dependencies]
 
