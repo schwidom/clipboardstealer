@@ -1,0 +1,19 @@
+[package]
+name = "clipboardstealer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# clipboard = "0"
+termion = "4.0.3"
+# clipboard_x11 = "0"
+x11-clipboard = "0.9.3"
+signal-hook = "0.3.17"
+# xcb = "0"
+xcb_1 = { package = "xcb", version = "1.5.0" }
+chrono = "0.4.39"
+# num = "0.4.3"
+regex = "1.11.1"
+clap_derive =  "4.5.28"
+clap = { version = "4.5.31", features = ["derive"] }
