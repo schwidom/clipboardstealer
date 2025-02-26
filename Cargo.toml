@@ -1,6 +1,6 @@
 [package]
 name = "clipboardstealer"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Frank Schwidom"]
 description = "X11 Clipboardmanager which enforces the user choice"
@@ -23,3 +23,4 @@ chrono = "0.4.39"
 regex = "1.11.1"
 clap_derive =  "4.5.28"
 clap = { version = "4.5.31", features = ["derive"] }
+nu-ansi-term = "0.50.1"

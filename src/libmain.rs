@@ -50,6 +50,8 @@ use crate::clipboards::*;
 
 use crate::termionscreen::TermionScreen;
 
+use nu_ansi_term::AnsiGenericString;
+
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -339,6 +341,8 @@ pub fn main() {
   }
  }
 
+ println!("{}", AnsiGenericString::title("Clipboardstealer"));
+
  let config = Config::from_args(&args);
 
  if config.debug {
@@ -408,6 +412,8 @@ pub fn main() {
  if config.debug {
   monitor2("end");
  }
+
+ println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that
