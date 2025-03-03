@@ -61,6 +61,8 @@ impl<'a> TermionScreens<'a> {
 
   print!("Event Page, q ends the screen");
 
+  let receiver = self.meh.lock().unwrap().get_receiver();
+
   loop {
    if self.meh.lock().unwrap().get_stop_threads() {
     break;
@@ -70,8 +72,6 @@ impl<'a> TermionScreens<'a> {
 
    self.flush();
    // println!("flushed");
-
-   let receiver = self.meh.lock().unwrap().get_receiver();
 
    let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
 
@@ -93,6 +93,8 @@ impl<'a> TermionScreens<'a> {
   let mut layout = Layout::new();
 
   self.cls(); // in loop possible but flickers
+
+  let receiver = self.meh.lock().unwrap().get_receiver();
 
   loop {
    if self.meh.lock().unwrap().get_stop_threads() {
@@ -176,8 +178,6 @@ impl<'a> TermionScreens<'a> {
    // println gets printed, print or write needs flush
    self.flush();
 
-   let receiver = self.meh.lock().unwrap().get_receiver();
-
    let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
 
    // println!(" got : {:?}", evt);
@@ -241,6 +241,8 @@ impl<'a> TermionScreens<'a> {
 
   self.cls(); // in loop possible but flickers
 
+  let receiver = self.meh.lock().unwrap().get_receiver();
+
   loop {
    if self.meh.lock().unwrap().get_stop_threads() {
     break;
@@ -302,8 +304,6 @@ impl<'a> TermionScreens<'a> {
 
    // println gets printed, print or write needs flush
    self.flush();
-
-   let receiver = self.meh.lock().unwrap().get_receiver();
 
    let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
 
