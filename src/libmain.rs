@@ -106,8 +106,7 @@ impl ClipboardThread {
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
    loop {
-    sleep_default(); // avoids deadlock
-                     // dt0gtu9sxm, ic4q5snjyp t 6 alt // ClipboardThread.run
+    // dt0gtu9sxm, ic4q5snjyp t 6 alt // ClipboardThread.run
     match meh.lock() {
      Err(poison_error) => {
       // eprintln!("{:?}", poison_error); // TODO : logfile
@@ -165,12 +164,14 @@ impl ClipboardThread {
     // the Barrier had to be after the meh lock on the receiver side
     // and should be here after the push_event and after meh is released here
     // thread::yield_now(); // don't avoid deadlock
-    sleep_default(); // avoids deadlock
+    sleep_default(); // cgyeofnrzk // avoids deadlock
 
     if inserted_clipboard.0 {
      // ic4q5snjyp t 6
      meh.lock()?.push_event(&MyEvent::CbInsertedClipboard)?;
     }
+
+    sleep_default(); // cgyeofnrzk // avoids deadlock
    }
   });
   thread
@@ -268,16 +269,7 @@ impl MySignalsLoop {
      // ic4q5snjyp t 7 alt
      meh.push_event(&MyEvent::SignalHook(signal))?;
     }
-    // match signal {
-    //  SIGWINCH => {
-    //   // println!("winch");
-    //  }
-    //  SIGINT => {
-    //   // println!("int");
-    //   // panic!(); // tritt nicht ein, kommt als MyEvent::Termion an ( Ctrl('c') )
-    //  }
-    //  _ => unreachable!(),
-    // }
+    sleep_default(); // cgyeofnrzk
    }
    Ok(())
   });
@@ -345,7 +337,6 @@ impl<'a> MouseThread<'a> {
     if meh.lock()?.get_stop_threads() {
      break;
     }
-    sleep_default();
     let cookie = connection.send_request(&QueryPointer { window: rootwindow });
     let event = connection.wait_for_reply(cookie);
     // println!("QueryPointer 0x1de {:?}", event);
@@ -391,6 +382,7 @@ impl<'a> MouseThread<'a> {
      meh.lock()?.push_event(&MyEvent::Shift(false))?;
      shift_pressed = y
     }
+    sleep_default(); // cgyeofnrzk
    }
    Ok(())
   });
