@@ -24,3 +24,4 @@ regex = "1.11.1"
 clap_derive =  "4.5.28"
 clap = { version = "4.5.31", features = ["derive"] }
 nu-ansi-term = "0.50.1"
+# unicode-width = "0.2.0"
