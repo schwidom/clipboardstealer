@@ -29,14 +29,21 @@ impl Layout {
  pub fn get_current_line(&self) -> u16 {
   self.current_line
  }
+
  fn fixline(&self, string: &str) -> String {
   let z = flatline(string); // lcibiwnao0
-                            // NOTE : writes over the end because wie are not at the beginning of the line
-  match self.width {
-   Some(w) => &z[0..min(z.len(), w as usize)],
-   None => &z[0..z.len()],
-  }
-  .to_owned()
+
+  // NOTE : writes over the end because wie are not at the beginning of the line
+
+  let l = match self.width {
+   Some(w) => min(z.len(), w as usize),
+   None => z.len(),
+  };
+
+  z.chars()
+   .enumerate()
+   .map_while(|(idx, char)| if idx <= l { Some(char) } else { None })
+   .collect()
  }
 
  pub fn print_line_wrap(&mut self) {}
