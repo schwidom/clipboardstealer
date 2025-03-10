@@ -333,23 +333,6 @@ impl<'a> MouseThread<'a> {
     }
     let cookie = connection.send_request(&QueryPointer { window: rootwindow });
     let event = connection.wait_for_reply(cookie);
-    // println!("QueryPointer 0x1de {:?}", event);
-    if (false) {
-     let p = PathBuf::from_str("/tmp/tmp.ceEb8WHeI9/log.txt").unwrap();
-     // NOTE: without 'create' : blocks if the file dont exist
-     let mut file = OpenOptions::new()
-      .create(true)
-      .write(true)
-      .append(true)
-      .open(p)
-      .unwrap();
-     // file.write("test\n".as_bytes());
-     writeln!(&file, "QueryPointer 0x1de {:?}", event);
-     file.flush();
-    }
-    // thats it
-    // QueryPointer 0x1de Ok(QueryPointerReply { response_type: 1, same_screen: true, sequence: 26791, length: 0, root: Window { res_id: 478 }, child: Window { res_id: 16787724 }, root_x: 822, root_y: 560, win_x: 822, win_y: 560, mask: CONTROL, pad: 2 })
-    // QueryPointer 0x1de Ok(QueryPointerReply { response_type: 1, same_screen: true, sequence: 53770, length: 0, root: Window { res_id: 478 }, child: Window { res_id: 16787724 }, root_x: 1094, root_y: 623, win_x: 1094, win_y: 623, mask: CONTROL | BUTTON1, pad: 2 })
 
     let event_mask = event.unwrap().mask();
 
@@ -380,6 +363,7 @@ impl<'a> MouseThread<'a> {
      sleep_default(); // cgyeofnrzk
      shift_pressed = y
     }
+    sleep_default();
    }
    Ok(())
   });
