@@ -106,7 +106,7 @@ impl ClipboardThread {
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
    loop {
-    // dt0gtu9sxm, ic4q5snjyp t 6 alt // ClipboardThread.run
+    // dt0gtu9sxm, ic4q5snjyp t 6 alt, fddt4zu0y5 t 6 // ClipboardThread.run
     match meh.lock() {
      Err(poison_error) => {
       // eprintln!("{:?}", poison_error); // TODO : logfile
@@ -159,12 +159,13 @@ impl ClipboardThread {
      meh.lock()?.push_event(&MyEvent::CbInsertedPrimary)?;
     }
 
+    sleep_default(); // cgyeofnrzk // avoids deadlock
+
     // NOTE : maybe it is better, to have a mutex here which is blocked as long as meh is used
     // on the receiver side (or a Barrier)
     // the Barrier had to be after the meh lock on the receiver side
     // and should be here after the push_event and after meh is released here
     // thread::yield_now(); // don't avoid deadlock
-    sleep_default(); // cgyeofnrzk // avoids deadlock
 
     if inserted_clipboard.0 {
      // ic4q5snjyp t 6
@@ -220,17 +221,10 @@ impl TermionLoop {
      if meh.get_stop_threads() {
       break;
      }
+     // fddt4zu0y5 t 8 // TermionLoop.run_loop
      meh.push_event(&MyEvent::Termion(u.clone()))?;
     }
-    // match meh.lock() {
-    //  Err(poison_error) => break,
-    //  Ok(mut meh) => {
-    //   if meh.get_stop_threads() {
-    //    break;
-    //   }
-    //   meh.push_event_preparation(&MyEvent::Termion(u.clone()));
-    //  }
-    // }
+    sleep_default(); // cgyeofnrzk
    }
    Ok(())
   });
@@ -257,7 +251,7 @@ impl MySignalsLoop {
   // let handle = signals.handle();
 
   let thread = thread::spawn(move || -> Result<(), MyError> {
-   // a0vbfusiba, x9kwvw3yj0 // MySignalsLoop.run_thread
+   // a0vbfusiba, x9kwvw3yj0, fddt4zu0y5 t 7 // MySignalsLoop.run_thread
    for signal in &mut signals {
     // dbaphuses4, ic4q5snjyp t 7
     {
@@ -333,7 +327,7 @@ impl<'a> MouseThread<'a> {
    let mut shift_pressed = false;
 
    loop {
-    // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2
+    // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2, fddt4zu0y5 t 2
     if meh.lock()?.get_stop_threads() {
      break;
     }
@@ -363,26 +357,29 @@ impl<'a> MouseThread<'a> {
     if x && !mousebutton1pressed {
      // println!("press");
      meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
+     sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
     }
     if !x && mousebutton1pressed {
      // println!("release");
      // a0vbfusiba
      meh.lock()?.push_event(&MyEvent::MouseButton1(false))?;
+     sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
     }
 
     let y = event_mask.contains(KeyButMask::SHIFT);
     if y && !shift_pressed {
      meh.lock()?.push_event(&MyEvent::Shift(true))?;
+     sleep_default(); // cgyeofnrzk
      shift_pressed = y
     }
 
     if !y && shift_pressed {
      meh.lock()?.push_event(&MyEvent::Shift(false))?;
+     sleep_default(); // cgyeofnrzk
      shift_pressed = y
     }
-    sleep_default(); // cgyeofnrzk
    }
    Ok(())
   });
@@ -462,7 +459,7 @@ pub fn main() {
   println!("WaitForEnd start");
   monitor2("wfe");
  }
- // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1 // main
+ // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1, fddt4zu0y5 t 1 // main
  // blockt hier meh noch nicht
  WaitForEnd::new().run_blocking(meh.clone());
  if config.debug {

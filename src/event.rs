@@ -49,7 +49,7 @@ impl<'a> EventPusher<'a> {
   match self {
    EventPusher::NothingToSend => {}
    EventPusher::ToSend { ev, sender } => {
-    // ic4q5snjyp t 6, alt t 7
+    // ic4q5snjyp t 6, alt t 7, fddt4zu0y5 t 8
     sender.send(ev.clone().clone());
     ()
    }
@@ -99,6 +99,7 @@ impl MyEventHandler {
  }
 
  pub fn push_event<'a>(&mut self, ev: &'a MyEvent) -> Result<(), MyError> {
+  // fddt4zu0y5 t 8 // MyEventHandler.push_event
   self.push_event_preparation(ev)?.send();
   Ok(())
  }
