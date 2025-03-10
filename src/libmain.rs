@@ -22,12 +22,13 @@ use xcb_1::{
 
 use std::{
  borrow::Borrow,
+ error::Error,
  fs::{File, OpenOptions},
  io::Write,
  os::fd::AsFd,
  path::PathBuf,
  str::FromStr,
- sync::LazyLock,
+ sync::{LazyLock, MutexGuard, PoisonError, TryLockError},
  thread::JoinHandle,
 };
 
@@ -61,6 +62,30 @@ pub struct Args {
  pub(crate) debug: bool,
 }
 
+pub enum MyError {
+ PoisonError,
+ UnitError,
+}
+
+// From<PoisonError<MutexGuard<'_, MyEventHandler>>>`
+// impl From<PoisonError<_>> for MyError {
+//  fn from(value: PoisonError<_>) -> Self {
+//   MyError::PoisonError
+//  }
+// }
+
+impl From<PoisonError<MutexGuard<'_, MyEventHandler>>> for MyError {
+ fn from(value: PoisonError<MutexGuard<'_, MyEventHandler>>) -> Self {
+  MyError::PoisonError
+ }
+}
+
+impl From<()> for MyError {
+ fn from(value: ()) -> Self {
+  MyError::UnitError
+ }
+}
+
 // use crate::event::*;
 
 /** waits for clipboard events and handles them */
@@ -75,49 +100,76 @@ impl ClipboardThread {
   }
  }
 
- fn run(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<()> {
+ fn run(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
   let cbs = self.cbs.clone();
 
-  let thread: JoinHandle<_> = thread::spawn(move || {
+  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
    loop {
-    if meh.lock().unwrap().get_stop_threads() {
-     break;
+    sleep_default(); // avoids deadlock
+                     // dt0gtu9sxm, ic4q5snjyp t 6 alt // ClipboardThread.run
+    match meh.lock() {
+     Err(poison_error) => {
+      // eprintln!("{:?}", poison_error); // TODO : logfile
+      break Err(MyError::PoisonError);
+     }
+     Ok(meh) => {
+      if meh.get_stop_threads() {
+       break Err(MyError::PoisonError);
+      }
+
+      // dbaphuses4, a0vbfusiba // ClipboardThread.run
+      // sleep_default();
+
+      if meh.get_mouse_button_1_is_pressed() {
+       continue;
+      }
+
+      if meh.get_shift_is_pressed() {
+       continue;
+      }
+     }
     }
 
-    sleep_default();
+    let (inserted_primary, inserted_clipboard) = match cbs.lock() {
+     Err(poison_error) => {
+      break Err(MyError::PoisonError);
+     }
+     Ok(cbs) => {
+      // let inserted_primary = cbs.primary.lock().unwrap().process_clipboard_contents();
+      let inserted_primary = match cbs.primary.lock() {
+       Err(poison_error) => {
+        break Err(MyError::PoisonError);
+       }
+       Ok(mut cbs) => cbs.process_clipboard_contents(),
+      };
 
-    if meh.lock().unwrap().get_mouse_button_1_is_pressed() {
-     continue;
-    }
+      // let inserted_clipboard = cbs.clipboard.lock().unwrap().process_clipboard_contents();
+      let inserted_clipboard = match cbs.clipboard.lock() {
+       Err(poison_error) => {
+        break Err(MyError::PoisonError);
+       }
+       Ok(mut cbs) => cbs.process_clipboard_contents(),
+      };
 
-    if meh.lock().unwrap().get_shift_is_pressed() {
-     continue;
-    }
-
-    let inserted_primary = cbs
-     .lock()
-     .unwrap()
-     .primary
-     .lock()
-     .unwrap()
-     .process_clipboard_contents();
-    let inserted_clipboard = cbs
-     .lock()
-     .unwrap()
-     .clipboard
-     .lock()
-     .unwrap()
-     .process_clipboard_contents();
+      (inserted_primary, inserted_clipboard)
+     }
+    };
 
     if inserted_primary.0 {
-     meh.lock().unwrap().push_event(&MyEvent::CbInsertedPrimary);
+     meh.lock()?.push_event(&MyEvent::CbInsertedPrimary)?;
     }
+
+    // NOTE : maybe it is better, to have a mutex here which is blocked as long as meh is used
+    // on the receiver side (or a Barrier)
+    // the Barrier had to be after the meh lock on the receiver side
+    // and should be here after the push_event and after meh is released here
+    // thread::yield_now(); // don't avoid deadlock
+    sleep_default(); // avoids deadlock
+
     if inserted_clipboard.0 {
-     meh
-      .lock()
-      .unwrap()
-      .push_event(&MyEvent::CbInsertedClipboard);
+     // ic4q5snjyp t 6
+     meh.lock()?.push_event(&MyEvent::CbInsertedClipboard)?;
     }
    }
   });
@@ -149,21 +201,37 @@ impl TermionLoop {
   // }
  }
 
- fn run_loop(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<()> {
+ fn run_loop(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
   // let mut tla = self.tla.clone();
   // let mut stdout_raw = self.stdout_raw.lock().unwrap();
   // let mut stdout_raw = self.stdout_raw.clone();
-  let thread = thread::spawn(move || {
+  let thread = thread::spawn(move || -> Result<(), MyError> {
    // let mut tla = tla.lock().unwrap();
    let stdin = stdin();
+   // ic4q5snjyp t 8
    for e in stdin.events() {
-    if meh.lock().unwrap().get_stop_threads() {
-     break;
-    }
     // let mut stdout = stdout_raw.lock().unwrap();
     let u = e.unwrap();
-    meh.lock().unwrap().push_event(&MyEvent::Termion(u.clone()));
+
+    // a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 8 alt // TermionLoop.run_loop
+    {
+     let mut meh = meh.lock()?;
+     if meh.get_stop_threads() {
+      break;
+     }
+     meh.push_event(&MyEvent::Termion(u.clone()))?;
+    }
+    // match meh.lock() {
+    //  Err(poison_error) => break,
+    //  Ok(mut meh) => {
+    //   if meh.get_stop_threads() {
+    //    break;
+    //   }
+    //   meh.push_event_preparation(&MyEvent::Termion(u.clone()));
+    //  }
+    // }
    }
+   Ok(())
   });
   thread
  }
@@ -183,17 +251,23 @@ impl MySignalsLoop {
   Self {}
  }
 
- fn run_thread(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<()> {
+ fn run_thread(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
   let mut signals = Signals::new(&[SIGWINCH, SIGINT]).unwrap();
   // let handle = signals.handle();
 
-  let thread = thread::spawn(move || {
+  let thread = thread::spawn(move || -> Result<(), MyError> {
+   // a0vbfusiba, x9kwvw3yj0 // MySignalsLoop.run_thread
    for signal in &mut signals {
-    if meh.lock().unwrap().get_stop_threads() {
-     break;
+    // dbaphuses4, ic4q5snjyp t 7
+    {
+     let mut meh = meh.lock()?;
+     if meh.get_stop_threads() {
+      break;
+     }
+     // println!("signal : {:?}", signal);
+     // ic4q5snjyp t 7 alt
+     meh.push_event(&MyEvent::SignalHook(signal))?;
     }
-    // println!("signal : {:?}", signal);
-    meh.lock().unwrap().push_event(&MyEvent::SignalHook(signal));
     // match signal {
     //  SIGWINCH => {
     //   // println!("winch");
@@ -205,6 +279,7 @@ impl MySignalsLoop {
     //  _ => unreachable!(),
     // }
    }
+   Ok(())
   });
   thread
  }
@@ -220,8 +295,9 @@ impl WaitForEnd {
 
  fn run_blocking(self, meh: Arc<Mutex<MyEventHandler>>) {
   loop {
-   // TODO : semaphore?
+   // TODO : semaphore? or mpsc?
    sleep_default();
+   // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm // WaitForEnd.run_blocking
    if meh.lock().unwrap().get_stop_threads() {
     break;
    }
@@ -237,9 +313,9 @@ impl<'a> MouseThread<'a> {
  fn new(config: &'a Config) -> Self {
   Self { config }
  }
- fn run(&self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<()> {
+ fn run(&self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
   let debug = self.config.debug;
-  let thread = thread::spawn(move || {
+  let thread = thread::spawn(move || -> Result<(), MyError> {
    // println!("EventMask::all() {:x}", EventMask::all());
    // TODO : clean up the unwrap
    let displayname: String = std::env::var_os("DISPLAY")
@@ -265,7 +341,8 @@ impl<'a> MouseThread<'a> {
    let mut shift_pressed = false;
 
    loop {
-    if meh.lock().unwrap().get_stop_threads() {
+    // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2
+    if meh.lock()?.get_stop_threads() {
      break;
     }
     sleep_default();
@@ -294,29 +371,28 @@ impl<'a> MouseThread<'a> {
     let x = event_mask.contains(KeyButMask::BUTTON1);
     if x && !mousebutton1pressed {
      // println!("press");
-     meh.lock().unwrap().push_event(&MyEvent::MouseButton1(true));
+     meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
      mousebutton1pressed = x
     }
     if !x && mousebutton1pressed {
      // println!("release");
-     meh
-      .lock()
-      .unwrap()
-      .push_event(&MyEvent::MouseButton1(false));
+     // a0vbfusiba
+     meh.lock()?.push_event(&MyEvent::MouseButton1(false))?;
      mousebutton1pressed = x
     }
 
     let y = event_mask.contains(KeyButMask::SHIFT);
     if y && !shift_pressed {
-     meh.lock().unwrap().push_event(&MyEvent::Shift(true));
+     meh.lock()?.push_event(&MyEvent::Shift(true))?;
      shift_pressed = y
     }
 
     if !y && shift_pressed {
-     meh.lock().unwrap().push_event(&MyEvent::Shift(false));
+     meh.lock()?.push_event(&MyEvent::Shift(false))?;
      shift_pressed = y
     }
    }
+   Ok(())
   });
   thread
  }
@@ -394,6 +470,8 @@ pub fn main() {
   println!("WaitForEnd start");
   monitor2("wfe");
  }
+ // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1 // main
+ // blockt hier meh noch nicht
  WaitForEnd::new().run_blocking(meh.clone());
  if config.debug {
   println!("WaitForEnd end");

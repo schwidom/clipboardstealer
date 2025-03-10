@@ -25,6 +25,7 @@ pub struct ClipboardSelectionList {
 }
 
 /** referred to ClipboardSelectionList */
+#[derive(Clone)]
 pub struct ListChanged(pub bool);
 
 impl ClipboardSelectionList {

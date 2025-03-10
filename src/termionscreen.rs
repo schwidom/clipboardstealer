@@ -64,21 +64,28 @@ impl<'a> TermionScreens<'a> {
   let receiver = self.meh.lock().unwrap().get_receiver();
 
   loop {
-   if self.meh.lock().unwrap().get_stop_threads() {
-    break;
-   }
-
    let (_width, _height) = termion::terminal_size().unwrap();
 
    self.flush();
    // println!("flushed");
 
-   let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
+   let evt = match receiver.lock() {
+    // blocks
+    Ok(rcv) => match rcv.recv() {
+     Ok(value) => value,
+     Err(_) => break,
+    },
+    Err(_) => break,
+   };
+
+   // if meh is nedded longer after recv, use this one
+   if self.meh.lock().unwrap().get_stop_threads() {
+    break;
+   }
 
    // println!(" got : {:?}", evt);
 
    match evt {
-    MyEvent::EOF => break,
     MyEvent::Termion(Event::Key(Key::Char('q'))) => break, // gbrxzcymlj
     _ => {
      print!("{:?}", evt);
@@ -97,9 +104,10 @@ impl<'a> TermionScreens<'a> {
   let receiver = self.meh.lock().unwrap().get_receiver();
 
   loop {
-   if self.meh.lock().unwrap().get_stop_threads() {
-    break;
-   }
+   // x9kwvw3yj0, ic4q5snjyp t 9
+   // if self.meh.lock().unwrap().get_stop_threads() {
+   //  break;
+   // }
 
    let (width, height) = termion::terminal_size().unwrap();
    layout.set_width_height(width, height);
@@ -178,12 +186,24 @@ impl<'a> TermionScreens<'a> {
    // println gets printed, print or write needs flush
    self.flush();
 
-   let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
+   // a0vbfusiba // TermionScreens.first_page
+   let evt = match receiver.lock() {
+    // blocks
+    Ok(rcv) => match rcv.recv() {
+     Ok(value) => value,
+     Err(_) => break,
+    },
+    Err(_) => break,
+   };
+
+   // if meh is nedded longer after recv, use this one
+   if self.meh.lock().unwrap().get_stop_threads() {
+    break;
+   }
 
    // println!(" got : {:?}", evt);
 
    match evt {
-    MyEvent::EOF => break,
     MyEvent::Termion(Event::Key(Key::Char('q'))) => break, // gbrxzcymlj
     MyEvent::Termion(Event::Key(Key::Char('f'))) => {
      if self.config.debug {
@@ -244,10 +264,6 @@ impl<'a> TermionScreens<'a> {
   let receiver = self.meh.lock().unwrap().get_receiver();
 
   loop {
-   if self.meh.lock().unwrap().get_stop_threads() {
-    break;
-   }
-
    let (width, height) = termion::terminal_size().unwrap();
    layout.set_width_height(width, height);
    layout.reset_current_line();
@@ -305,12 +321,23 @@ impl<'a> TermionScreens<'a> {
    // println gets printed, print or write needs flush
    self.flush();
 
-   let evt = receiver.lock().unwrap().recv().unwrap(); // blocks
+   let evt = match receiver.lock() {
+    // blocks
+    Ok(rcv) => match rcv.recv() {
+     Ok(value) => value,
+     Err(_) => break,
+    },
+    Err(_) => break,
+   };
+
+   // if meh is nedded longer after recv, use this one
+   if self.meh.lock().unwrap().get_stop_threads() {
+    break;
+   }
 
    // println!(" got : {:?}", evt);
 
    match evt {
-    MyEvent::EOF => break,
     MyEvent::Termion(Event::Key(Key::Char('q'))) => break, // gbrxzcymlj
     _ => {
      Pager::handle_event(&mut scroller, &evt);
@@ -376,6 +403,7 @@ impl<'a> TermionScreen<'a> {
 
    if true {
     let mut tss = TermionScreens::new(&config, cbs.clone(), meh.clone());
+    // a0vbfusiba, x9kwvw3yj0, ic4q5snjyp t 9 // TermionScreen.run_loop
     tss.first_page();
     meh.lock().unwrap().set_stop_threads();
    }
