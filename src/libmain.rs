@@ -15,6 +15,7 @@ use termion::{
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
+// use x11_clipboard::error::Error as X11Error;
 use xcb_1::{
  x::{KeyButMask, QueryPointer},
  Connection,
@@ -65,6 +66,7 @@ pub struct Args {
 pub enum MyError {
  PoisonError,
  UnitError,
+ // X11Clipboard(X11Error),
 }
 
 // From<PoisonError<MutexGuard<'_, MyEventHandler>>>`

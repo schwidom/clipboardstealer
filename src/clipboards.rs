@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use chrono::TimeDelta;
 use x11_clipboard as x11;
+// use x11_clipboard::error::Error as X11Error;
 
 use x11::Atoms;
 
@@ -12,6 +13,7 @@ use x11::Clipboard;
 // use x11::xcb::Atom;
 use x11::Atom;
 
+use crate::libmain::MyError;
 use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
 
@@ -80,13 +82,22 @@ impl ClipboardSelectionList {
      .captured_from_clipboard
      .push((MyTime::now(), s.clone()));
    }
-   self.crw.write(self.get_current_selection().1); // TODO
-   return ListChanged(insert);
+   if self.crw.write(self.get_current_selection().1) {
+    return ListChanged(insert);
+   } else {
+    return default_ret;
+   }
   }
 
   return default_ret;
  }
 }
+
+// impl From<X11Error> for MyError {
+//  fn from(value: X11Error) -> Self {
+//   MyError::X11Clipboard(value)
+//  }
+// }
 
 /** simplifies the reading / writing to a specific clipboard ( primary and clipboard) */
 pub struct ClipboardReaderWriter {
@@ -137,14 +148,15 @@ impl ClipboardReaderWriter {
   // String::from_utf8_lossy(selection_u8.as_slice()).into()
  }
 
- pub fn write(&self, s: String) {
+ pub fn write(&self, s: String) -> bool {
   let cb_atoms = &self.atoms;
   let value = s.as_bytes();
   let selection = self.atom;
+
   self
    .cb
    .store(selection, cb_atoms.utf8_string, value)
-   .unwrap();
+   .map_or_else(|_| false, |_| true)
  }
 }
 
