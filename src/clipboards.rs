@@ -48,9 +48,14 @@ impl ClipboardSelectionList {
  pub fn process_clipboard_contents(&mut self) -> ListChanged {
   let default_ret = ListChanged(false);
   let s = &self.crw.read();
+  if s.is_none() {
+   return ListChanged(false);
+  }
+  let s = s.clone().unwrap();
+
   // println!("{s}");
   // happens in 2 cases: by selection or by the selection reset
-  if &self.get_current_selection().1 == s {
+  if self.get_current_selection().1 == s {
    // TODO
    return default_ret;
   }
@@ -62,13 +67,13 @@ impl ClipboardSelectionList {
    return default_ret;
   }
 
-  if &last_pushed_string.clone().unwrap().1 != s {
+  if last_pushed_string.clone().unwrap().1 != s {
    self.last_pushed_string = Some((MyTime::now(), s.into()));
    return default_ret;
   } else if last_pushed_string.unwrap().0.elapsed() > TimeDelta::try_seconds(1).unwrap() {
    let insert = match self.captured_from_clipboard.last() {
     None => true,
-    Some(last_string) => &last_string.1 != s,
+    Some(last_string) => last_string.1 != s,
    };
    if insert {
     self
@@ -98,14 +103,38 @@ impl ClipboardReaderWriter {
   Self { cb, atom, atoms }
  }
 
- pub fn read(&self) -> String {
+ // TODO : when I do "$echo 'secondary' | xclip -i -t secondary" then I get an error here
+ // I don't exactly know how to handle that case
+ // xclip -t TARGETS -o outputs : TARGETS\nUTF8_STRING
+ // xclip -i -t UTF8_STRING : fills the primary clipboard
+ // this fills the 3 clipboards likewise
+ // $ echo primary | xclip -i -selection primary
+ // $ echo clipboard | xclip -i -selection clipboard
+ // $ echo secondary | xclip -i -selection secondary
+ // $ xclip -o -selection primary
+ // primary
+ // $ xclip -o -selection secondary
+ // secondary
+ // $ xclip -o -selection clipboard
+ // clipboard
+
+ pub fn read(&self) -> Option<String> {
   let cb_atoms = &self.atoms;
   let selection = self.atom;
-  let selection_u8 = self
+
+  match self
    .cb
    .load(selection, cb_atoms.utf8_string, cb_atoms.property, Duration::from_secs(3))
-   .unwrap();
-  String::from_utf8_lossy(selection_u8.as_slice()).into()
+  {
+   Ok(selection_u8) => Some(String::from_utf8_lossy(selection_u8.as_slice()).into()),
+   Err(_) => None,
+  }
+
+  // let selection_u8 = self
+  //  .cb
+  //  .load(selection, cb_atoms.utf8_string, cb_atoms.property, Duration::from_secs(3))
+  //  .unwrap();
+  // String::from_utf8_lossy(selection_u8.as_slice()).into()
  }
 
  pub fn write(&self, s: String) {
@@ -122,6 +151,7 @@ impl ClipboardReaderWriter {
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
  pub primary: Arc<Mutex<ClipboardSelectionList>>,
+ pub secondary: Arc<Mutex<ClipboardSelectionList>>,
  pub clipboard: Arc<Mutex<ClipboardSelectionList>>,
 }
 
@@ -131,6 +161,10 @@ impl Clipboards {
   Self {
    // shift einf / middle mouse
    primary: Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.primary))),
+
+   // echo 123 | xclip -i -selection primary
+   // see /usr/include/X11/Xatom.h : XA_SECONDARY
+   secondary: Arc::new(Mutex::new(ClipboardSelectionList::new(2))),
    // ctrl-c/ctrl-v
    clipboard: Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.clipboard))),
   }

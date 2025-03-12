@@ -28,7 +28,7 @@ use std::{
  os::fd::AsFd,
  path::PathBuf,
  str::FromStr,
- sync::{LazyLock, MutexGuard, PoisonError, TryLockError},
+ sync::{LazyLock, MutexGuard, PoisonError, RwLock, TryLockError},
  thread::JoinHandle,
 };
 
@@ -100,11 +100,13 @@ impl ClipboardThread {
   }
  }
 
- fn run(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
+ fn run(&mut self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   let cbs = self.cbs.clone();
 
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
+   let meh = ss.meh;
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
+   ss.loop_start.read();
    loop {
     // dt0gtu9sxm, ic4q5snjyp t 6 alt, fddt4zu0y5 t 6 // ClipboardThread.run
     match meh.lock() {
@@ -130,12 +132,11 @@ impl ClipboardThread {
      }
     }
 
-    let (inserted_primary, inserted_clipboard) = match cbs.lock() {
+    let (inserted_primary, inserted_secondary, inserted_clipboard) = match cbs.lock() {
      Err(poison_error) => {
       break Err(MyError::PoisonError);
      }
      Ok(cbs) => {
-      // let inserted_primary = cbs.primary.lock().unwrap().process_clipboard_contents();
       let inserted_primary = match cbs.primary.lock() {
        Err(poison_error) => {
         break Err(MyError::PoisonError);
@@ -143,7 +144,13 @@ impl ClipboardThread {
        Ok(mut cbs) => cbs.process_clipboard_contents(),
       };
 
-      // let inserted_clipboard = cbs.clipboard.lock().unwrap().process_clipboard_contents();
+      let inserted_secondary = match cbs.secondary.lock() {
+       Err(poison_error) => {
+        break Err(MyError::PoisonError);
+       }
+       Ok(mut cbs) => cbs.process_clipboard_contents(),
+      };
+
       let inserted_clipboard = match cbs.clipboard.lock() {
        Err(poison_error) => {
         break Err(MyError::PoisonError);
@@ -151,7 +158,7 @@ impl ClipboardThread {
        Ok(mut cbs) => cbs.process_clipboard_contents(),
       };
 
-      (inserted_primary, inserted_clipboard)
+      (inserted_primary, inserted_secondary, inserted_clipboard)
      }
     };
 
@@ -166,6 +173,12 @@ impl ClipboardThread {
     // the Barrier had to be after the meh lock on the receiver side
     // and should be here after the push_event and after meh is released here
     // thread::yield_now(); // don't avoid deadlock
+
+    if inserted_secondary.0 {
+     meh.lock()?.push_event(&MyEvent::CbInsertedSecondary)?;
+    }
+
+    sleep_default(); // cgyeofnrzk // avoids deadlock
 
     if inserted_clipboard.0 {
      // ic4q5snjyp t 6
@@ -203,14 +216,16 @@ impl TermionLoop {
   // }
  }
 
- fn run_loop(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
+ fn run_loop(&mut self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   // let mut tla = self.tla.clone();
   // let mut stdout_raw = self.stdout_raw.lock().unwrap();
   // let mut stdout_raw = self.stdout_raw.clone();
   let thread = thread::spawn(move || -> Result<(), MyError> {
+   let meh = ss.meh;
    // let mut tla = tla.lock().unwrap();
    let stdin = stdin();
    // ic4q5snjyp t 8
+   ss.loop_start.read();
    for e in stdin.events() {
     // let mut stdout = stdout_raw.lock().unwrap();
     let u = e.unwrap();
@@ -246,12 +261,14 @@ impl MySignalsLoop {
   Self {}
  }
 
- fn run_thread(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
+ fn run_thread(&mut self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   let mut signals = Signals::new(&[SIGWINCH, SIGINT]).unwrap();
   // let handle = signals.handle();
 
   let thread = thread::spawn(move || -> Result<(), MyError> {
+   let meh = ss.meh;
    // a0vbfusiba, x9kwvw3yj0, fddt4zu0y5 t 7 // MySignalsLoop.run_thread
+   ss.loop_start.read();
    for signal in &mut signals {
     // dbaphuses4, ic4q5snjyp t 7
     {
@@ -299,7 +316,7 @@ impl<'a> MouseThread<'a> {
  fn new(config: &'a Config) -> Self {
   Self { config }
  }
- fn run(&self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<Result<(), MyError>> {
+ fn run(&self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   let debug = self.config.debug;
   let thread = thread::spawn(move || -> Result<(), MyError> {
    // println!("EventMask::all() {:x}", EventMask::all());
@@ -326,9 +343,10 @@ impl<'a> MouseThread<'a> {
    let mut mousebutton1pressed = false;
    let mut shift_pressed = false;
 
+   ss.loop_start.read();
    loop {
     // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2, fddt4zu0y5 t 2
-    if meh.lock()?.get_stop_threads() {
+    if ss.meh.lock()?.get_stop_threads() {
      break;
     }
     let cookie = connection.send_request(&QueryPointer { window: rootwindow });
@@ -339,27 +357,27 @@ impl<'a> MouseThread<'a> {
     let x = event_mask.contains(KeyButMask::BUTTON1);
     if x && !mousebutton1pressed {
      // println!("press");
-     meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
+     ss.meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
      sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
     }
     if !x && mousebutton1pressed {
      // println!("release");
      // a0vbfusiba
-     meh.lock()?.push_event(&MyEvent::MouseButton1(false))?;
+     ss.meh.lock()?.push_event(&MyEvent::MouseButton1(false))?;
      sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
     }
 
     let y = event_mask.contains(KeyButMask::SHIFT);
     if y && !shift_pressed {
-     meh.lock()?.push_event(&MyEvent::Shift(true))?;
+     ss.meh.lock()?.push_event(&MyEvent::Shift(true))?;
      sleep_default(); // cgyeofnrzk
      shift_pressed = y
     }
 
     if !y && shift_pressed {
-     meh.lock()?.push_event(&MyEvent::Shift(false))?;
+     ss.meh.lock()?.push_event(&MyEvent::Shift(false))?;
      sleep_default(); // cgyeofnrzk
      shift_pressed = y
     }
@@ -368,6 +386,21 @@ impl<'a> MouseThread<'a> {
    Ok(())
   });
   thread
+ }
+}
+
+#[derive(Clone)]
+pub struct SyncStuff {
+ pub meh: Arc<Mutex<MyEventHandler>>,
+ pub loop_start: Arc<RwLock<()>>,
+}
+
+impl SyncStuff {
+ pub fn new() -> Self {
+  Self {
+   meh: Arc::new(Mutex::new(MyEventHandler::new())),
+   loop_start: Arc::new(RwLock::new(())),
+  }
  }
 }
 
@@ -399,7 +432,9 @@ pub fn main() {
  }
 
  // let meh = MyEventHandler::new();
- let meh = Arc::new(Mutex::new(MyEventHandler::new()));
+ // let meh = Arc::new(Mutex::new(MyEventHandler::new()));
+ let ss = SyncStuff::new();
+ let loop_start_block = ss.loop_start.write();
 
  // let mut _stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap()); // creates mouse events
  // let mut _stdout2 = RawTerminal::from(stdout().into_raw_mode().unwrap()); // creates  ???
@@ -409,43 +444,47 @@ pub fn main() {
  }
 
  let mt = MouseThread::new(&config);
- let mtjh = mt.run(meh.clone());
+ let mtjh = mt.run(ss.clone());
 
  if config.debug {
   monitor2("ct");
  }
 
  let mut ct = ClipboardThread::new();
- let ctjh = ct.run(meh.clone());
+ let ctjh = ct.run(ss.clone());
 
  if config.debug {
   monitor2("ms");
  }
 
  let mut ms = MySignalsLoop::new();
- let _msjh = ms.run_thread(meh.clone());
+ let _msjh = ms.run_thread(ss.clone());
 
  if config.debug {
   monitor2("tl");
  }
 
  let mut tl = TermionLoop::new();
- let _tljh = tl.run_loop(meh.clone());
+ let _tljh = tl.run_loop(ss.clone());
 
  if config.debug {
   monitor2("ts");
  }
 
  let mut ts = TermionScreen::new(&config, ct.cbs.clone());
- let tsjh = ts.run_loop(meh.clone());
+ let tsjh = ts.run_loop(ss.clone());
 
  if config.debug {
   println!("WaitForEnd start");
   monitor2("wfe");
  }
+
+ sleep_default();
+ drop(loop_start_block);
+
  // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1, fddt4zu0y5 t 1 // main
  // blockt hier meh noch nicht
- WaitForEnd::new().run_blocking(meh.clone());
+ WaitForEnd::new().run_blocking(ss.meh.clone());
  if config.debug {
   println!("WaitForEnd end");
   monitor2("tsjh");

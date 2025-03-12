@@ -19,6 +19,7 @@ pub enum MyEvent {
  MouseButton1(bool), // pressed (true) / released (false)
  Shift(bool),        // pressed (true) / released (false)
  CbInsertedPrimary,
+ CbInsertedSecondary,
  CbInsertedClipboard,
  Unused,
 }

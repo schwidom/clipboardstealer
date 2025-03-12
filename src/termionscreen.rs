@@ -4,6 +4,7 @@
 use std::cmp::min;
 use std::io::{stdout, Stdout, Write};
 use std::ops::Deref;
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -14,6 +15,7 @@ use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::entries::Entries;
 use crate::event::{MyEvent, MyEventHandler};
 use crate::layout::Layout;
+use crate::libmain::SyncStuff;
 use crate::pager::Pager;
 use crate::scroller::{CursorRepetitions, Scroller};
 use crate::tools::MyTime; // TODO
@@ -27,18 +29,21 @@ use termion::{self, scroll};
 struct TermionScreens<'a> {
  config: &'a Config,
  cbs: Arc<Mutex<Clipboards>>,
- meh: Arc<Mutex<MyEventHandler>>,
+ ss: SyncStuff,
  stdout: Stdout,
+ receiver: Arc<Mutex<Receiver<MyEvent>>>,
 }
 
 impl<'a> TermionScreens<'a> {
- fn new(config: &'a Config, cbs: Arc<Mutex<Clipboards>>, meh: Arc<Mutex<MyEventHandler>>) -> Self {
+ fn new(config: &'a Config, cbs: Arc<Mutex<Clipboards>>, ss: SyncStuff) -> Self {
+  let receiver = ss.meh.clone().lock().unwrap().get_receiver().clone();
   let stdout = stdout();
   Self {
    config,
    cbs,
-   meh,
+   ss,
    stdout,
+   receiver,
   }
  }
 
@@ -61,15 +66,13 @@ impl<'a> TermionScreens<'a> {
 
   print!("Event Page, q ends the screen");
 
-  let receiver = self.meh.lock().unwrap().get_receiver();
-
   loop {
    let (_width, _height) = termion::terminal_size().unwrap();
 
    self.flush();
    // println!("flushed");
 
-   let evt = match receiver.lock() {
+   let evt = match self.receiver.lock() {
     // blocks
     Ok(rcv) => match rcv.recv() {
      Ok(value) => value,
@@ -79,7 +82,7 @@ impl<'a> TermionScreens<'a> {
    };
 
    // if meh is nedded longer after recv, use this one
-   if self.meh.lock().unwrap().get_stop_threads() {
+   if self.ss.meh.lock().unwrap().get_stop_threads() {
     break;
    }
 
@@ -101,7 +104,7 @@ impl<'a> TermionScreens<'a> {
 
   self.cls(); // in loop possible but flickers
 
-  let receiver = self.meh.lock().unwrap().get_receiver();
+  let cbsclone = self.cbs.clone();
 
   loop {
    // x9kwvw3yj0, ic4q5snjyp t 9
@@ -120,11 +123,11 @@ impl<'a> TermionScreens<'a> {
 
    let selected_entry = {
     // screen listing
-    let cbsclone = self.cbs.clone();
     let cbs = cbsclone.lock().unwrap();
 
     let mut entries = Entries::from_csl("p", &cbs.primary);
-    entries.append(&mut Entries::from_csl("s", &cbs.clipboard));
+    entries.append(&mut Entries::from_csl("s", &cbs.secondary));
+    entries.append(&mut Entries::from_csl("c", &cbs.clipboard));
 
     entries.sort_by(|x, y| y.timestamp.cmp(&x.timestamp));
 
@@ -187,7 +190,7 @@ impl<'a> TermionScreens<'a> {
    self.flush();
 
    // a0vbfusiba // TermionScreens.first_page
-   let evt = match receiver.lock() {
+   let evt = match self.receiver.lock() {
     // blocks
     Ok(rcv) => match rcv.recv() {
      Ok(value) => value,
@@ -198,7 +201,7 @@ impl<'a> TermionScreens<'a> {
 
    // if meh is nedded longer after recv, use this one
    // fddt4zu0y5 t 9
-   if self.meh.lock().unwrap().get_stop_threads() {
+   if self.ss.meh.lock().unwrap().get_stop_threads() {
     break;
    }
 
@@ -262,8 +265,6 @@ impl<'a> TermionScreens<'a> {
 
   self.cls(); // in loop possible but flickers
 
-  let receiver = self.meh.lock().unwrap().get_receiver();
-
   loop {
    let (width, height) = termion::terminal_size().unwrap();
    layout.set_width_height(width, height);
@@ -322,7 +323,7 @@ impl<'a> TermionScreens<'a> {
    // println gets printed, print or write needs flush
    self.flush();
 
-   let evt = match receiver.lock() {
+   let evt = match self.receiver.lock() {
     // blocks
     Ok(rcv) => match rcv.recv() {
      Ok(value) => value,
@@ -332,7 +333,7 @@ impl<'a> TermionScreens<'a> {
    };
 
    // if meh is nedded longer after recv, use this one
-   if self.meh.lock().unwrap().get_stop_threads() {
+   if self.ss.meh.lock().unwrap().get_stop_threads() {
     break;
    }
 
@@ -354,8 +355,8 @@ impl<'a> TermionScreens<'a> {
   clipboardstealer [--debug]
 
   - runs in a terminal window, 
-  - captures the primary and secondary X11 clipboard
-  - allows selection of primary and secondary X11 clipboard
+  - captures the X11 clipboards named: primary, secondary and clipboard
+  - allows selection of all three of them
   - enforces the user choice
 
   - Keys: 
@@ -369,7 +370,7 @@ impl<'a> TermionScreens<'a> {
    (v)iew ... shows the selected entry
    (s)elect ... selects the chosen entry and 
                 enforces it for the specific 
-                (p)rimary or (s)econdary clipboard
+                primary, secondary or clipboard clipboards
 
    (q)uit ... exits a screen
    e(x)it ... exits the program
@@ -392,7 +393,7 @@ impl<'a> TermionScreen<'a> {
   Self { config, cbs }
  }
 
- pub fn run_loop(&mut self, meh: Arc<Mutex<MyEventHandler>>) -> JoinHandle<()> {
+ pub fn run_loop(&mut self, ss: SyncStuff) -> JoinHandle<()> {
   let cbs = self.cbs.clone();
   let config = (*self.config).clone();
   let thread = thread::spawn(move || {
@@ -403,10 +404,11 @@ impl<'a> TermionScreen<'a> {
    stdout.flush().unwrap();
 
    if true {
-    let mut tss = TermionScreens::new(&config, cbs.clone(), meh.clone());
+    let mut tss = TermionScreens::new(&config, cbs.clone(), ss.clone());
+    ss.loop_start.read();
     // a0vbfusiba, x9kwvw3yj0, ic4q5snjyp t 9, fddt4zu0y5 t 9  // TermionScreen.run_loop
     tss.first_page();
-    meh.lock().unwrap().set_stop_threads();
+    ss.meh.lock().unwrap().set_stop_threads();
    }
    stdout.flush().unwrap();
   });
