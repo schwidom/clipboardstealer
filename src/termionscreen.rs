@@ -5,6 +5,7 @@ use std::cmp::min;
 use std::io::{stdout, Stdout, Write};
 use std::ops::Deref;
 use std::sync::mpsc::Receiver;
+use std::sync::TryLockError::{Poisoned, WouldBlock};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -81,8 +82,13 @@ impl<'a> TermionScreens<'a> {
     Err(_) => break,
    };
 
-   // if meh is nedded longer after recv, use this one
-   if self.ss.meh.lock().unwrap().get_stop_threads() {
+   // // if meh is nedded longer after recv, use this one
+   // if self.ss.meh.lock().unwrap().get_stop_threads() {
+   //  break;
+   // }
+
+   // if meh is nedded longer after recv, create a new thread
+   if self.get_stop_threads() {
     break;
    }
 
@@ -200,10 +206,15 @@ impl<'a> TermionScreens<'a> {
     Err(_) => break,
    };
 
-   // if meh is nedded longer after recv, use this one
-   // fddt4zu0y5 t 9
-   // br83mnnp4d t 10
-   if self.ss.meh.lock().unwrap().get_stop_threads() {
+   // // fddt4zu0y5 t 9
+   // // br83mnnp4d t 10
+   // // if meh is nedded longer after recv, use this one
+   // if self.ss.meh.lock().unwrap().get_stop_threads() {
+   //  break;
+   // }
+
+   // if meh is nedded longer after recv, create a new thread
+   if self.get_stop_threads() {
     break;
    }
 
@@ -329,8 +340,13 @@ impl<'a> TermionScreens<'a> {
     Err(_) => break,
    };
 
-   // if meh is nedded longer after recv, use this one
-   if self.ss.meh.lock().unwrap().get_stop_threads() {
+   // // if meh is nedded longer after recv, use this one
+   // if self.ss.meh.lock().unwrap().get_stop_threads() {
+   //  break;
+   // }
+
+   // if meh is nedded longer after recv, create a new thread
+   if self.get_stop_threads() {
     break;
    }
 
@@ -377,6 +393,21 @@ impl<'a> TermionScreens<'a> {
   This software is licensed under the terms of the Apache-2.0 license. ";
 
   self.view_page(&text);
+ }
+
+ // TODO : error handling
+ fn get_stop_threads(&self) -> bool {
+  match self.ss.meh.try_lock() {
+   Err(err) => match err {
+    Poisoned(poison_error) => {
+     // TODO
+     eprintln!("poison_error : {:?}", poison_error);
+     true
+    }
+    WouldBlock => false,
+   },
+   Ok(meh) => meh.get_stop_threads(),
+  }
  }
 }
 
