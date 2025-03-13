@@ -202,6 +202,7 @@ impl<'a> TermionScreens<'a> {
 
    // if meh is nedded longer after recv, use this one
    // fddt4zu0y5 t 9
+   // br83mnnp4d t 10
    if self.ss.meh.lock().unwrap().get_stop_threads() {
     break;
    }
@@ -403,6 +404,7 @@ impl<'a> TermionScreen<'a> {
     let mut tss = TermionScreens::new(&config, cbs.clone(), ss.clone());
     ss.loop_start.read();
     // a0vbfusiba, x9kwvw3yj0, ic4q5snjyp t 9, fddt4zu0y5 t 9  // TermionScreen.run_loop
+    // br83mnnp4d t 10
     tss.first_page();
     ss.meh.lock().unwrap().set_stop_threads();
    }

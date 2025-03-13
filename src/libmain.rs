@@ -152,8 +152,8 @@ impl ClipboardThread {
       res
      }
     };
-
     if results.contains(&ListChanged(true)) {
+     // br83mnnp4d t 7 lock + push block
      meh.lock()?.push_event(&MyEvent::CbInserted)?;
     }
 
@@ -212,6 +212,7 @@ impl TermionLoop {
 
     // a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 8 alt // TermionLoop.run_loop
     {
+     // br83mnnp4d t 9 lockblock
      let mut meh = meh.lock()?;
      if meh.get_stop_threads() {
       break;
@@ -249,6 +250,7 @@ impl MySignalsLoop {
    let meh = ss.meh;
    // a0vbfusiba, x9kwvw3yj0, fddt4zu0y5 t 7 // MySignalsLoop.run_thread
    ss.loop_start.read();
+   // br83mnnp4d t 8 readerblock
    for signal in &mut signals {
     // dbaphuses4, ic4q5snjyp t 7
     {
@@ -281,6 +283,7 @@ impl WaitForEnd {
    // TODO : semaphore? or mpsc?
    sleep_default();
    // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm // WaitForEnd.run_blocking
+   // br83mnnp4d t 1 lockblock
    if meh.lock().unwrap().get_stop_threads() {
     break;
    }
@@ -326,6 +329,7 @@ impl<'a> MouseThread<'a> {
    ss.loop_start.read();
    loop {
     // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2, fddt4zu0y5 t 2
+    // br83mnnp4d t 2 lockblock
     if ss.meh.lock()?.get_stop_threads() {
      break;
     }
@@ -464,6 +468,7 @@ pub fn main() {
 
  // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1, fddt4zu0y5 t 1 // main
  // blockt hier meh noch nicht
+ // br83mnnp4d t 1
  WaitForEnd::new().run_blocking(ss.meh.clone());
  if config.debug {
   println!("WaitForEnd end");
