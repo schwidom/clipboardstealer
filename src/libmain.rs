@@ -28,6 +28,7 @@ use std::{
  io::Write,
  os::fd::AsFd,
  path::PathBuf,
+ result,
  str::FromStr,
  sync::{LazyLock, MutexGuard, PoisonError, RwLock, TryLockError},
  thread::JoinHandle,
@@ -109,7 +110,7 @@ impl ClipboardThread {
    let meh = ss.meh;
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
    ss.loop_start.read();
-   loop {
+   'outer: loop {
     // dt0gtu9sxm, ic4q5snjyp t 6 alt, fddt4zu0y5 t 6 // ClipboardThread.run
     match meh.lock() {
      Err(poison_error) => {
@@ -134,38 +135,26 @@ impl ClipboardThread {
      }
     }
 
-    let (inserted_primary, inserted_secondary, inserted_clipboard) = match cbs.lock() {
+    let results = match cbs.lock() {
      Err(poison_error) => {
       break Err(MyError::PoisonError);
      }
      Ok(cbs) => {
-      let inserted_primary = match cbs.primary.lock() {
-       Err(poison_error) => {
-        break Err(MyError::PoisonError);
+      let mut res: Vec<ListChanged> = vec![];
+      for (name, cb) in &cbs.hm {
+       match cb.lock() {
+        Err(poison_error) => {
+         break 'outer Err(MyError::PoisonError);
+        }
+        Ok(mut cb) => res.push(cb.process_clipboard_contents()),
        }
-       Ok(mut cbs) => cbs.process_clipboard_contents(),
-      };
-
-      let inserted_secondary = match cbs.secondary.lock() {
-       Err(poison_error) => {
-        break Err(MyError::PoisonError);
-       }
-       Ok(mut cbs) => cbs.process_clipboard_contents(),
-      };
-
-      let inserted_clipboard = match cbs.clipboard.lock() {
-       Err(poison_error) => {
-        break Err(MyError::PoisonError);
-       }
-       Ok(mut cbs) => cbs.process_clipboard_contents(),
-      };
-
-      (inserted_primary, inserted_secondary, inserted_clipboard)
+      }
+      res
      }
     };
 
-    if inserted_primary.0 {
-     meh.lock()?.push_event(&MyEvent::CbInsertedPrimary)?;
+    if results.contains(&ListChanged(true)) {
+     meh.lock()?.push_event(&MyEvent::CbInserted)?;
     }
 
     sleep_default(); // cgyeofnrzk // avoids deadlock
@@ -175,17 +164,6 @@ impl ClipboardThread {
     // the Barrier had to be after the meh lock on the receiver side
     // and should be here after the push_event and after meh is released here
     // thread::yield_now(); // don't avoid deadlock
-
-    if inserted_secondary.0 {
-     meh.lock()?.push_event(&MyEvent::CbInsertedSecondary)?;
-    }
-
-    sleep_default(); // cgyeofnrzk // avoids deadlock
-
-    if inserted_clipboard.0 {
-     // ic4q5snjyp t 6
-     meh.lock()?.push_event(&MyEvent::CbInsertedClipboard)?;
-    }
 
     sleep_default(); // cgyeofnrzk // avoids deadlock
    }

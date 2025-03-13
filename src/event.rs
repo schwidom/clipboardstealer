@@ -18,9 +18,10 @@ pub enum MyEvent {
  SignalHook(c_int),  // signal_hook didn't wrap that
  MouseButton1(bool), // pressed (true) / released (false)
  Shift(bool),        // pressed (true) / released (false)
- CbInsertedPrimary,
- CbInsertedSecondary,
- CbInsertedClipboard,
+ CbInserted,
+ // CbInsertedPrimary,
+ // CbInsertedSecondary,
+ // CbInsertedClipboard,
  Unused,
 }
 

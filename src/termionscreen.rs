@@ -125,9 +125,10 @@ impl<'a> TermionScreens<'a> {
     // screen listing
     let cbs = cbsclone.lock().unwrap();
 
-    let mut entries = Entries::from_csl("p", &cbs.primary);
-    entries.append(&mut Entries::from_csl("s", &cbs.secondary));
-    entries.append(&mut Entries::from_csl("c", &cbs.clipboard));
+    let mut entries = vec![];
+    for (name, cb) in &cbs.hm {
+     entries.append(&mut Entries::from_csl(&name, cb));
+    }
 
     entries.sort_by(|x, y| y.timestamp.cmp(&x.timestamp));
 
@@ -214,18 +215,13 @@ impl<'a> TermionScreens<'a> {
       // fill with testdata
       let mut cbs = self.cbs.lock().unwrap();
       for i in 10..20 {
-       cbs
-        .primary
-        .lock()
-        .unwrap()
-        .captured_from_clipboard
-        .push((MyTime::now(), i.to_string()));
-       cbs
-        .clipboard
-        .lock()
-        .unwrap()
-        .captured_from_clipboard
-        .push((MyTime::now(), i.to_string()));
+       for (name, cb) in &cbs.hm {
+        cb
+         .lock()
+         .unwrap()
+         .captured_from_clipboard
+         .push((MyTime::now(), i.to_string()));
+       }
       }
       println!("done f");
      }

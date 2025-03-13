@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -13,7 +14,7 @@ use x11::Clipboard;
 // use x11::xcb::Atom;
 use x11::Atom;
 
-use crate::libmain::MyError;
+// use crate::libmain::MyError;
 use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
 
@@ -27,7 +28,7 @@ pub struct ClipboardSelectionList {
 }
 
 /** referred to ClipboardSelectionList */
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ListChanged(pub bool);
 
 impl ClipboardSelectionList {
@@ -162,23 +163,20 @@ impl ClipboardReaderWriter {
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
- pub primary: Arc<Mutex<ClipboardSelectionList>>,
- pub secondary: Arc<Mutex<ClipboardSelectionList>>,
- pub clipboard: Arc<Mutex<ClipboardSelectionList>>,
+ pub hm: HashMap<String, Arc<Mutex<ClipboardSelectionList>>>,
 }
 
 impl Clipboards {
  pub fn new() -> Self {
   let cb_atoms = cb_get_atoms();
-  Self {
-   // shift einf / middle mouse
-   primary: Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.primary))),
-
-   // echo 123 | xclip -i -selection primary
-   // see /usr/include/X11/Xatom.h : XA_SECONDARY
-   secondary: Arc::new(Mutex::new(ClipboardSelectionList::new(2))),
-   // ctrl-c/ctrl-v
-   clipboard: Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.clipboard))),
-  }
+  let mut hm = HashMap::new();
+  // shift ins / middle mouse
+  hm.insert("p".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.primary))));
+  // echo 123 | xclip -i -selection primary
+  // see /usr/include/X11/Xatom.h : XA_SECONDARY
+  hm.insert("s".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(2))));
+  // ctrl-c/ctrl-v
+  hm.insert("c".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.clipboard))));
+  Self { hm }
  }
 }
