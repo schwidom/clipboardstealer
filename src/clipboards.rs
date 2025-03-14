@@ -19,7 +19,6 @@ use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
 
 /** holds the clipboard information per clipboard type */
-
 pub struct ClipboardSelectionList {
  crw: ClipboardReaderWriter,
  pub captured_from_clipboard: Vec<(MyTime, String)>,
@@ -66,12 +65,12 @@ impl ClipboardSelectionList {
   let last_pushed_string = self.last_pushed_string.clone();
 
   if last_pushed_string.is_none() {
-   self.last_pushed_string = Some((MyTime::now(), s.into()));
+   self.last_pushed_string = Some((MyTime::now(), s));
    return default_ret;
   }
 
   if last_pushed_string.clone().unwrap().1 != s {
-   self.last_pushed_string = Some((MyTime::now(), s.into()));
+   self.last_pushed_string = Some((MyTime::now(), s));
    return default_ret;
   } else if last_pushed_string.unwrap().0.elapsed() > TimeDelta::try_seconds(1).unwrap() {
    let insert = match self.captured_from_clipboard.last() {

@@ -146,7 +146,7 @@ impl<'a> TermionScreens<'a> {
 
     let mut entries = vec![];
     for (name, cb) in &cbs.hm {
-     entries.append(&mut Entries::from_csl(&name, cb));
+     entries.append(&mut Entries::from_csl(name, cb));
     }
 
     entries.sort_by(|x, y| y.timestamp.cmp(&x.timestamp));
@@ -169,24 +169,14 @@ impl<'a> TermionScreens<'a> {
     for (idx, entry) in entries[scroller.get_windowrange()].iter().enumerate() {
      let is_cursor = match scroller.get_cursor() {
       None => false,
-      Some(value) => {
-       if idx as u16 == value {
-        true
-       } else {
-        false
-       }
-      }
+      Some(value) => idx as u16 == value,
      };
 
      let cursor_star = if is_cursor { ">" } else { " " };
 
      let is_selected = {
       let csl = entry.csl.lock().unwrap();
-      if Some(entry.csl_idx) == csl.current_selection {
-       true
-      } else {
-       false
-      }
+      Some(entry.csl_idx) == csl.current_selection
      };
 
      let selection_star = if is_selected { "*" } else { " " };
@@ -390,7 +380,7 @@ impl<'a> TermionScreens<'a> {
  fn help_page(&mut self) {
   let text = config::USAGE;
 
-  self.view_page(&text);
+  self.view_page(text);
  }
 
  // TODO : error handling

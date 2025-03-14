@@ -3,6 +3,7 @@ use termion::event::{Event, Key};
 
 use std::{
  ffi::c_int,
+ ops::Deref,
  sync::{
   mpsc::{self, Receiver, SyncSender},
   Arc, Mutex,
@@ -46,14 +47,12 @@ pub enum EventPusher<'a> {
  },
 }
 
-impl<'a> EventPusher<'a> {
+impl EventPusher<'_> {
  pub fn send(&self) {
   match self {
    EventPusher::NothingToSend => {}
    EventPusher::ToSend { ev, sender } => {
-    // ic4q5snjyp t 6, alt t 7, fddt4zu0y5 t 8
-    sender.send(ev.clone().clone());
-    ()
+    sender.send((*ev).clone());
    }
   }
  }
@@ -100,8 +99,7 @@ impl MyEventHandler {
   self.stopthreads
  }
 
- pub fn push_event<'a>(&mut self, ev: &'a MyEvent) -> Result<(), MyError> {
-  // fddt4zu0y5 t 8 // MyEventHandler.push_event
+ pub fn push_event(&mut self, ev: &MyEvent) -> Result<(), MyError> {
   self.push_event_preparation(ev)?.send();
   Ok(())
  }
