@@ -10,3 +10,4 @@ pub mod entries;
 pub mod config;
 pub mod pager;
 pub mod constants;
+pub mod layout_ratatui;

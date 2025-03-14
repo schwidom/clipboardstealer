@@ -30,7 +30,7 @@ impl Layout {
   self.current_line
  }
 
- fn fixline(&self, string: &str) -> String {
+ pub fn fixline(&self, string: &str) -> String {
   let z = flatline(string); // lcibiwnao0
 
   // NOTE : writes over the end because wie are not at the beginning of the line

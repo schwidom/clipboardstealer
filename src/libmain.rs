@@ -6,6 +6,8 @@ extern crate clap;
 extern crate termion;
 extern crate x11_clipboard;
 
+use ratatui;
+
 use termion::{
  input::TermRead,
  is_tty,
@@ -488,6 +490,8 @@ pub fn main() {
   monitor2("end");
  }
 
+
+ ratatui::restore();
  println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
  // tljh.join(); // never!, that would block here, we don't want that
