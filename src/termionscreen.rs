@@ -135,6 +135,7 @@ impl<'a> TermionScreens<'a> {
   let mut terminal_reinitialize = false;
   let mut rv = RatatuiVariables::<PagerLayout>::new();
 
+  // TODO : startvalue per parameter would be nice
   let mut is_folded = false;
 
   loop {
@@ -223,7 +224,7 @@ impl<'a> TermionScreens<'a> {
      // layout.print_line_cut(&s002);
      if is_cursor && !is_folded {
       let s002 = format!(
-       "{} {} {} {} {} : \n {}",
+       "{} {} {} {} {} : \n{}",
        cursor_star,
        selection_star,
        idx + scroller.get_windowposition(), // mqbojcmkot
