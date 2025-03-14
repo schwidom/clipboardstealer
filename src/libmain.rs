@@ -72,13 +72,6 @@ pub enum MyError {
  // X11Clipboard(X11Error),
 }
 
-// From<PoisonError<MutexGuard<'_, MyEventHandler>>>`
-// impl From<PoisonError<_>> for MyError {
-//  fn from(value: PoisonError<_>) -> Self {
-//   MyError::PoisonError
-//  }
-// }
-
 impl From<PoisonError<MutexGuard<'_, MyEventHandler>>> for MyError {
  fn from(value: PoisonError<MutexGuard<'_, MyEventHandler>>) -> Self {
   MyError::PoisonError
@@ -113,7 +106,6 @@ impl ClipboardThread {
    // TODO : ggf. in verschiedene threads zerlegen mit verschiedenen timeouts
    ss.loop_start.read();
    'outer: loop {
-    // dt0gtu9sxm, ic4q5snjyp t 6 alt, fddt4zu0y5 t 6 // ClipboardThread.run
     match meh.lock() {
      Err(poison_error) => {
       // eprintln!("{:?}", poison_error); // TODO : logfile
@@ -123,9 +115,6 @@ impl ClipboardThread {
       if meh.get_stop_threads() {
        break Err(MyError::PoisonError);
       }
-
-      // dbaphuses4, a0vbfusiba // ClipboardThread.run
-      // sleep_default();
 
       if meh.get_mouse_button_1_is_pressed() {
        continue;
@@ -155,7 +144,6 @@ impl ClipboardThread {
      }
     };
     if results.contains(&ListChanged(true)) {
-     // br83mnnp4d t 7 lock + push block
      meh.lock()?.push_event(&MyEvent::CbInserted)?;
     }
 
@@ -192,34 +180,21 @@ impl TermionLoop {
    }
    Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
   }
-
-  // Self {
-  //  stdout_raw: Arc::new(Mutex::new(stdout().into_raw_mode().unwrap())),
-  // }
  }
 
  fn run_loop(&mut self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
-  // let mut tla = self.tla.clone();
-  // let mut stdout_raw = self.stdout_raw.lock().unwrap();
-  // let mut stdout_raw = self.stdout_raw.clone();
   let thread = thread::spawn(move || -> Result<(), MyError> {
    let meh = ss.meh;
-   // let mut tla = tla.lock().unwrap();
    let stdin = stdin();
-   // ic4q5snjyp t 8
    ss.loop_start.read();
    for e in stdin.events() {
-    // let mut stdout = stdout_raw.lock().unwrap();
     let u = e.unwrap();
 
-    // a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 8 alt // TermionLoop.run_loop
     {
-     // br83mnnp4d t 9 lockblock
      let mut meh = meh.lock()?;
      if meh.get_stop_threads() {
       break;
      }
-     // fddt4zu0y5 t 8 // TermionLoop.run_loop
      meh.push_event(&MyEvent::Termion(u.clone()))?;
     }
     sleep_default(); // cgyeofnrzk
@@ -246,22 +221,15 @@ impl MySignalsLoop {
 
  fn run_thread(&mut self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   let mut signals = Signals::new(&[SIGWINCH, SIGINT]).unwrap();
-  // let handle = signals.handle();
-
   let thread = thread::spawn(move || -> Result<(), MyError> {
    let meh = ss.meh;
-   // a0vbfusiba, x9kwvw3yj0, fddt4zu0y5 t 7 // MySignalsLoop.run_thread
    ss.loop_start.read();
-   // br83mnnp4d t 8 readerblock
    for signal in &mut signals {
-    // dbaphuses4, ic4q5snjyp t 7
     {
      let mut meh = meh.lock()?;
      if meh.get_stop_threads() {
       break;
      }
-     // println!("signal : {:?}", signal);
-     // ic4q5snjyp t 7 alt
      meh.push_event(&MyEvent::SignalHook(signal))?;
     }
     sleep_default(); // cgyeofnrzk
@@ -282,10 +250,7 @@ impl WaitForEnd {
 
  fn run_blocking(self, meh: Arc<Mutex<MyEventHandler>>) {
   loop {
-   // TODO : semaphore? or mpsc?
    sleep_default();
-   // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm // WaitForEnd.run_blocking
-   // br83mnnp4d t 1 lockblock
    if meh.lock().unwrap().get_stop_threads() {
     break;
    }
@@ -304,17 +269,12 @@ impl<'a> MouseThread<'a> {
  fn run(&self, ss: SyncStuff) -> JoinHandle<Result<(), MyError>> {
   let debug = self.config.debug;
   let thread = thread::spawn(move || -> Result<(), MyError> {
-   // println!("EventMask::all() {:x}", EventMask::all());
    // TODO : clean up the unwrap
    let displayname: String = std::env::var_os("DISPLAY")
     .unwrap()
     .to_string_lossy()
     .into();
-   // println!("display : {displayname}");
    let (connection, preferred_screen) = Connection::connect(Some(&displayname)).unwrap();
-   // println!("preferred_screen : {preferred_screen}");
-   // println!("connection : {:?}", connection);
-
    if debug {
     println!("MouseThread goes into loop state");
    }
@@ -322,16 +282,12 @@ impl<'a> MouseThread<'a> {
    let setup = connection.get_setup();
    let screen = setup.roots().nth(preferred_screen as usize).unwrap();
    let rootwindow = screen.root();
-   // laut "xwininfo -tree -root | less" ist 0x1de das root window, zeigt sich hier an den Ergebnissen
-   // println!("rootwindow : {:x}", rootwindow.resource_id());
 
    let mut mousebutton1pressed = false;
    let mut shift_pressed = false;
 
    ss.loop_start.read();
    loop {
-    // dbaphuses4, x9kwvw3yj0 2x, dt0gtu9sxm, ic4q5snjyp t 2, fddt4zu0y5 t 2
-    // br83mnnp4d t 2 lockblock
     if ss.meh.lock()?.get_stop_threads() {
      break;
     }
@@ -342,14 +298,11 @@ impl<'a> MouseThread<'a> {
 
     let x = event_mask.contains(KeyButMask::BUTTON1);
     if x && !mousebutton1pressed {
-     // println!("press");
      ss.meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
      sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
     }
     if !x && mousebutton1pressed {
-     // println!("release");
-     // a0vbfusiba
      ss.meh.lock()?.push_event(&MyEvent::MouseButton1(false))?;
      sleep_default(); // cgyeofnrzk
      mousebutton1pressed = x
@@ -417,8 +370,6 @@ pub fn main() {
   monitor();
  }
 
- // let meh = MyEventHandler::new();
- // let meh = Arc::new(Mutex::new(MyEventHandler::new()));
  let ss = SyncStuff::new();
  let loop_start_block = ss.loop_start.write();
 
@@ -468,9 +419,6 @@ pub fn main() {
  sleep_default();
  drop(loop_start_block);
 
- // dbaphuses4, a0vbfusiba, x9kwvw3yj0, dt0gtu9sxm, ic4q5snjyp t 1, fddt4zu0y5 t 1 // main
- // blockt hier meh noch nicht
- // br83mnnp4d t 1
  WaitForEnd::new().run_blocking(ss.meh.clone());
  if config.debug {
   println!("WaitForEnd end");
@@ -490,12 +438,9 @@ pub fn main() {
   monitor2("end");
  }
 
-
  ratatui::restore();
  println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that
-
- // println!("meh get_stop_threads : {}", meh.clone().lock().unwrap().get_stop_threads());
 }

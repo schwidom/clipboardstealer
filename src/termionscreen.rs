@@ -102,17 +102,10 @@ impl<'a> TermionScreens<'a> {
     Err(_) => break,
    };
 
-   // // if meh is nedded longer after recv, use this one
-   // if self.ss.meh.lock().unwrap().get_stop_threads() {
-   //  break;
-   // }
-
    // if meh is nedded longer after recv, create a new thread
    if self.get_stop_threads() {
     break;
    }
-
-   // println!(" got : {:?}", evt);
 
    match evt {
     MyEvent::Termion(Event::Key(Key::Char('q'))) => break, // gbrxzcymlj
@@ -128,8 +121,6 @@ impl<'a> TermionScreens<'a> {
   let mut scroller = Scroller::new();
   let mut layout = Layout::new();
 
-  // self.cls(); // in loop possible but flickers
-
   let cbsclone = self.cbs.clone();
 
   let mut terminal_reinitialize = false;
@@ -144,29 +135,8 @@ impl<'a> TermionScreens<'a> {
     terminal_reinitialize = false;
    }
 
-   // x9kwvw3yj0, ic4q5snjyp t 9
-   // if self.meh.lock().unwrap().get_stop_threads() {
-   //  break;
-   // }
-
-   // frame.render_widget(Text::raw("123"), pl.title_area); // don't work
-
-   if false {
-    // works
-    rv.terminal.draw(|mut frame| {
-     frame.render_widget(Text::raw("123"), rv.pl.status_area);
-    });
-    thread::sleep(Duration::from_secs(1));
-   }
-
    let (width, height) = termion::terminal_size().unwrap();
    layout.set_width_height(width, height);
-   // layout.reset_current_line();
-
-   // layout.print_line_cut(HELP_FIRST_PAGE);
-
-   // self.flush();
-   // println!("flushed");
 
    let mut lines = vec![];
 
@@ -261,12 +231,6 @@ impl<'a> TermionScreens<'a> {
     frame.render_widget(Text::raw(all_lines), rv.pl.main_area.inner(Margin::new(0, 1)));
    });
 
-   // print!("{}", termion::clear::AfterCursor);
-
-   // println gets printed, print or write needs flush
-   // self.flush();
-
-   // a0vbfusiba // TermionScreens.first_page
    let evt = match self.receiver.lock() {
     // blocks
     Ok(rcv) => match rcv.recv() {
@@ -275,13 +239,6 @@ impl<'a> TermionScreens<'a> {
     },
     Err(_) => break,
    };
-
-   // // fddt4zu0y5 t 9
-   // // br83mnnp4d t 10
-   // // if meh is nedded longer after recv, use this one
-   // if self.ss.meh.lock().unwrap().get_stop_threads() {
-   //  break;
-   // }
 
    // if meh is nedded longer after recv, create a new thread
    if self.get_stop_threads() {
@@ -350,8 +307,6 @@ impl<'a> TermionScreens<'a> {
 
   let string_lines = string_to_view.split("\n").collect::<Vec<_>>();
 
-  // self.cls(); // in loop possible but flickers
-
   let mut terminal_reinitialize = false;
   let mut rv = RatatuiVariables::<PagerLayout>::new();
 
@@ -363,12 +318,6 @@ impl<'a> TermionScreens<'a> {
 
    let (width, height) = termion::terminal_size().unwrap();
    layout.set_width_height(width, height);
-   // layout.reset_current_line();
-
-   // layout.print_line_cut(HELP_QX);
-
-   // self.flush();
-   // println!("flushed");
 
    let mut lines = vec![];
 
@@ -377,16 +326,6 @@ impl<'a> TermionScreens<'a> {
     scroller.set_content_length(Some(string_lines.len()));
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
     scroller.set_windowlength(rv.pl.main_area.inner(Margin::new(0, 1)).height);
-
-    // if self.config.debug {
-    //  let s001 =
-    //   format!("w {}, h {}, cl {}, {:?}", width, height, layout.get_current_line(), scroller);
-    //  layout.print_line_cut(&s001);
-    // } else {
-    //  layout.print_line_cut("");
-    // }
-
-    // let leading_zeroes = log( 10); // TODO : later
 
     for (idx, entry) in string_lines[scroller.get_windowrange()].iter().enumerate() {
      let cursor_star = match scroller.get_cursor() {
@@ -406,13 +345,12 @@ impl<'a> TermionScreens<'a> {
       idx + scroller.get_windowposition(), // mqbojcmkot
       entry,
      );
-     // layout.print_line_cut(&s002);
+
      lines.push(layout.fixline(&s002));
     }
 
     match scroller.get_cursor_in_array() {
      None => None,
-     // Some(value) => entries.get(value).clone(),
      Some(value) => Some(string_lines[value]),
     }
    };
@@ -425,11 +363,6 @@ impl<'a> TermionScreens<'a> {
     frame.render_widget(Text::raw(all_lines), rv.pl.main_area.inner(Margin::new(0, 1)));
    });
 
-   // print!("{}", termion::clear::AfterCursor);
-
-   // println gets printed, print or write needs flush
-   // self.flush();
-
    let evt = match self.receiver.lock() {
     // blocks
     Ok(rcv) => match rcv.recv() {
@@ -439,17 +372,10 @@ impl<'a> TermionScreens<'a> {
     Err(_) => break,
    };
 
-   // // if meh is nedded longer after recv, use this one
-   // if self.ss.meh.lock().unwrap().get_stop_threads() {
-   //  break;
-   // }
-
    // if meh is nedded longer after recv, create a new thread
    if self.get_stop_threads() {
     break;
    }
-
-   // println!(" got : {:?}", evt);
 
    match evt {
     MyEvent::Termion(Event::Key(Key::Char('q'))) => break, // gbrxzcymlj
@@ -459,7 +385,6 @@ impl<'a> TermionScreens<'a> {
     }
    }
   }
-  // self.flush();
  }
 
  fn help_page(&mut self) {
