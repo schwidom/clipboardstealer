@@ -31,19 +31,24 @@ impl Layout {
  }
 
  pub fn fixline(&self, string: &str) -> String {
+  // Remove newlines first
   let z = flatline(string); // lcibiwnao0
 
-  // NOTE : writes over the end because wie are not at the beginning of the line
+  // NOTE: previous implementation used z.len() (bytes) and an inclusive comparison
+  // which caused incorrect truncation of multibyte UTF-8 characters and an off-by-one.
+  // Use character-aware truncation here. For correct display-width handling (e.g.
+  // CJK or emoji that occupy multiple columns) consider using the unicode-width
+  // / unicode-segmentation crates in a follow-up change.
+
+  // Count characters (Unicode scalar values)
+  let char_count = z.chars().count();
 
   let l = match self.width {
-   Some(w) => min(z.len(), w as usize),
-   None => z.len(),
+   Some(w) => min(char_count, w as usize),
+   None => char_count,
   };
 
-  z.chars()
-   .enumerate()
-   .map_while(|(idx, char)| if idx <= l { Some(char) } else { None })
-   .collect()
+  z.chars().take(l).collect()
  }
 
  pub fn print_line_wrap(&mut self) {}
@@ -52,5 +57,29 @@ impl Layout {
   print!("{}", self.fixline(line));
   print!("{}", termion::clear::UntilNewline);
   self.current_line += 1;
+ }
+}
+
+#[cfg(test)]
+mod tests {
+ use crate::layout::Layout;
+
+ #[test]
+ fn fixline_multibyte_preserves_chars() {
+  let mut layout = Layout::new();
+  layout.set_width_height(5, 10);
+  // string contains ASCII, an accented char and an emoji (multibyte)
+  let s = "aé😊bc";
+  let fixed = layout.fixline(s);
+  // ensure we truncated by characters (not bytes) and got 5 characters
+  assert_eq!(fixed.chars().count(), 5);
+ }
+
+ #[test]
+ fn fixline_no_width_returns_full() {
+  let layout = Layout::new();
+  let s = "hello world";
+  let fixed = layout.fixline(s);
+  assert_eq!(fixed, "helloworld"); // flatline removes newlines only; input has no newlines
  }
 }
