@@ -28,7 +28,7 @@ clipboardstealer [--debug]
  e(x)it ... exits the program
  Ctrl-C ... exits the program
 
-Copyright : Frank Schwidom 2025
+Copyright : Frank Schwidom 2025 - 2026
 This software is licensed under the terms of the Apache-2.0 license. ";
 
 pub fn sleep_default() {
