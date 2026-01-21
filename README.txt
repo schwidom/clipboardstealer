@@ -1,4 +1,4 @@
-clipboardstealer [--debug]
+clipboardstealer [--debug] [--debugfile <DEBUGFILE>]
 
  - runs in a terminal window, 
  - captures the X11 clipboards named: primary, secondary and clipboard
