@@ -2,7 +2,7 @@ use std::{thread, time::Duration};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(30);
 
-pub const USAGE  : &str = r"
+pub const USAGE: &str = r"
 
 clipboardstealer [--debug]
 
@@ -39,12 +39,36 @@ pub fn sleep_default() {
 #[derive(Clone)]
 pub struct Config {
  pub debug: bool,
+ pub debugfile: Option<String>,
 }
 
 use crate::libmain::Args;
 
+use std::fs::OpenOptions;
+
+use tracing::{event, info, span, trace, Level};
+
 impl Config {
  pub fn from_args(args: &Args) -> Self {
-  Self { debug: args.debug }
+  if args.debug {
+   if let Some(df) = args.debugfile.clone() {
+    let file = OpenOptions::new()
+     .create(true)
+     .write(true)
+     .append(true)
+     .open(df)
+     .expect("Failed to open log file");
+
+    tracing_subscriber::fmt()
+     .with_writer(file)
+     .with_max_level(Level::TRACE) // TODO : setting via  clap / args
+     .init(); // calls set_global_default
+   } // TODO : else
+  }
+
+  Self {
+   debug: args.debug,
+   debugfile: args.debugfile.clone(),
+  }
  }
 }

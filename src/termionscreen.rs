@@ -32,6 +32,8 @@ use termion::event::{Event, Key};
 use termion::screen::IntoAlternateScreen;
 use termion::{self, scroll};
 
+use tracing::{event, info, span, trace, Level};
+
 // use num::Integer;
 
 struct TermionScreens<'a> {

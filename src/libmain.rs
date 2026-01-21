@@ -57,13 +57,17 @@ use crate::termionscreen::TermionScreen;
 
 use nu_ansi_term::AnsiGenericString;
 
+use tracing::{Level, event, info, span, trace};
+
 use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub struct Args {
- #[arg(long, default_value_t = false)]
+ #[arg(long, default_value_t = false, help = "provides debug information")]
  pub(crate) debug: bool,
+ #[arg(long, help = "writes debug information into file")]
+ pub(crate) debugfile: Option<String>,
 }
 
 pub enum MyError {
@@ -276,7 +280,7 @@ impl<'a> MouseThread<'a> {
     .into();
    let (connection, preferred_screen) = Connection::connect(Some(&displayname)).unwrap();
    if debug {
-    println!("MouseThread goes into loop state");
+    trace!("MouseThread goes into loop state");
    }
 
    let setup = connection.get_setup();
@@ -412,7 +416,7 @@ pub fn main() {
  let tsjh = ts.run_loop(ss.clone());
 
  if config.debug {
-  println!("WaitForEnd start");
+  trace!("WaitForEnd start");
   monitor2("wfe");
  }
 
@@ -421,7 +425,7 @@ pub fn main() {
 
  WaitForEnd::new().run_blocking(ss.meh.clone());
  if config.debug {
-  println!("WaitForEnd end");
+  trace!("WaitForEnd end");
   monitor2("tsjh");
  }
 
