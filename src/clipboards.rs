@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use chrono::TimeDelta;
@@ -14,16 +12,17 @@ use x11::Clipboard;
 // use x11::xcb::Atom;
 use x11::Atom;
 
+use crate::entries::Entries;
+use crate::entries::Entry;
 // use crate::libmain::MyError;
 use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
 
 /** holds the clipboard information per clipboard type */
 pub struct ClipboardSelectionList {
- crw: ClipboardReaderWriter,
+ pub crw: ClipboardReaderWriter,
  pub captured_from_clipboard: Vec<(MyTime, String)>,
  pub current_selection: Option<usize>, // TODO
- last_pushed_string: Option<(MyTime, String)>,
 }
 
 /** referred to ClipboardSelectionList */
@@ -36,7 +35,6 @@ impl ClipboardSelectionList {
    crw: ClipboardReaderWriter::new(atom),
    captured_from_clipboard: vec![],
    current_selection: None,
-   last_pushed_string: None,
   }
  }
 
@@ -47,49 +45,32 @@ impl ClipboardSelectionList {
   }
  }
 
- pub fn process_clipboard_contents(&mut self) -> ListChanged {
-  let default_ret = ListChanged(false);
-  let s = &self.crw.read();
-  if s.is_none() {
-   return ListChanged(false);
-  }
-  let s = s.clone().unwrap();
+ fn insert(&mut self, string: Option<String>) {
+  if let Some(s) = string {
+   let mut insert: bool = true;
 
-  // println!("{s}");
-  // happens in 2 cases: by selection or by the selection reset
-  if self.get_current_selection().1 == s {
-   // TODO
-   return default_ret;
-  }
+   if let Some(selection_idx) = self.current_selection {
+    let selection_string = &self.captured_from_clipboard[selection_idx].1;
+    if selection_string == &s {
+     insert = false;
+    } else {
+     self.crw.write(selection_string.clone());
+    }
+   }
 
-  let last_pushed_string = self.last_pushed_string.clone();
-
-  if last_pushed_string.is_none() {
-   self.last_pushed_string = Some((MyTime::now(), s));
-   return default_ret;
-  }
-
-  if last_pushed_string.clone().unwrap().1 != s {
-   self.last_pushed_string = Some((MyTime::now(), s));
-   return default_ret;
-  } else if last_pushed_string.unwrap().0.elapsed() > TimeDelta::try_seconds(1).unwrap() {
-   let insert = match self.captured_from_clipboard.last() {
-    None => true,
-    Some(last_string) => last_string.1 != s,
-   };
    if insert {
-    self
-     .captured_from_clipboard
-     .push((MyTime::now(), s.clone()));
-   }
-   if self.crw.write(self.get_current_selection().1) {
-    return ListChanged(insert);
-   } else {
-    return default_ret;
+    let now = MyTime::now();
+    if let Some(last) = self.captured_from_clipboard.last() {
+     let last_time = &last.0;
+     let span = now.timestamp - last_time.timestamp;
+     // TODO : configurable milliseconds
+     if span < TimeDelta::milliseconds(300) {
+      self.captured_from_clipboard.pop();
+     }
+    }
+    self.captured_from_clipboard.push((now, s.clone()));
    }
   }
-
-  return default_ret;
  }
 }
 
@@ -112,6 +93,10 @@ impl ClipboardReaderWriter {
   let atoms = cb.setter.atoms.clone();
 
   Self { cb, atom, atoms }
+ }
+
+ pub fn atom(&self) -> Atom {
+  self.atom
  }
 
  // TODO : when I do "$echo 'secondary' | xclip -i -t secondary" then I get an error here
@@ -162,7 +147,19 @@ impl ClipboardReaderWriter {
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
- pub hm: HashMap<String, Arc<Mutex<ClipboardSelectionList>>>,
+ // pub hm: HashMap<String, Arc<Mutex<ClipboardSelectionList>>>,
+ pub hm: HashMap<String, ClipboardSelectionList>,
+}
+
+pub fn atom_to_string(atom: u32) -> String {
+ let cb_atoms = cb_get_atoms();
+ match atom {
+  x if x == cb_atoms.primary => "p",
+  2 => "s",
+  x if x == cb_atoms.clipboard => "c",
+  _ => panic!(""),
+ }
+ .to_string()
 }
 
 impl Clipboards {
@@ -170,12 +167,30 @@ impl Clipboards {
   let cb_atoms = cb_get_atoms();
   let mut hm = HashMap::new();
   // shift ins / middle mouse
-  hm.insert("p".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.primary))));
+  hm.insert("p".to_string(), ClipboardSelectionList::new(cb_atoms.primary));
   // echo 123 | xclip -i -selection primary
   // see /usr/include/X11/Xatom.h : XA_SECONDARY
-  hm.insert("s".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(2))));
+  hm.insert("s".to_string(), ClipboardSelectionList::new(2));
   // ctrl-c/ctrl-v
-  hm.insert("c".to_string(), Arc::new(Mutex::new(ClipboardSelectionList::new(cb_atoms.clipboard))));
+  hm.insert("c".to_string(), ClipboardSelectionList::new(cb_atoms.clipboard));
   Self { hm }
+ }
+
+ pub(crate) fn insert(&mut self, atom: u32, string: Option<String>) {
+  self
+   .hm
+   .get_mut(&atom_to_string(atom))
+   .unwrap()
+   .insert(string);
+ }
+
+ pub fn get_entries(&mut self) -> Vec<Entry> {
+  let mut entries = vec![];
+  for (name, cb) in &self.hm {
+   entries.append(&mut Entries::from_csl(name, cb));
+  }
+
+  entries.sort_by(|x, y| y.timestamp.cmp(&x.timestamp));
+  entries
  }
 }

@@ -2,6 +2,7 @@ use std::{thread, time::Duration};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(30);
 
+// TODO : to constants
 pub const USAGE: &str = r"
 
 clipboardstealer [--debug] [--debugfile <DEBUGFILE>]

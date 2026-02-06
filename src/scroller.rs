@@ -14,6 +14,16 @@ pub struct Scroller {
 
 // TODO : in tools
 impl Scroller {
+
+ pub fn new() -> Self {
+  Self {
+   windowlength: 0,
+   windowposition: 0,
+   cursor: None,
+   contentlength: None,
+  }
+ }
+
  fn get_windowstart(&self) -> usize {
   self.windowposition
  }
@@ -205,15 +215,6 @@ impl Scroller {
    if !self.cursor_increase() {
     break;
    }
-  }
- }
-
- pub fn new() -> Self {
-  Self {
-   windowlength: 0,
-   windowposition: 0,
-   cursor: None,
-   contentlength: None,
   }
  }
 

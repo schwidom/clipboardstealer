@@ -10,7 +10,7 @@ use x11_clipboard::Clipboard;
 
 #[derive(Clone, PartialEq, Debug, PartialOrd, Eq, Ord)]
 pub struct MyTime {
- timestamp: DateTime<Local>,
+ pub timestamp: DateTime<Local>,
 }
 
 impl Display for MyTime {

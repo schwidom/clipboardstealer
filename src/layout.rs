@@ -33,7 +33,7 @@ impl Layout {
  pub fn fixline(&self, string: &str) -> String {
   let z = flatline(string); // lcibiwnao0
 
-  // NOTE : writes over the end because wie are not at the beginning of the line
+  // NOTE : writes over the end because we are not at the beginning of the line
 
   let l = match self.width {
    Some(w) => min(z.len(), w as usize),
