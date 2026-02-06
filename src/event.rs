@@ -43,22 +43,3 @@ impl MyEvent {
   }
  }
 }
-
-pub enum EventPusher<'a> {
- NothingToSend,
- ToSend {
-  ev: &'a MyEvent,
-  sender: Sender<MyEvent>,
- },
-}
-
-impl EventPusher<'_> {
- pub fn send(&self) {
-  match self {
-   EventPusher::NothingToSend => {}
-   EventPusher::ToSend { ev, sender } => {
-    sender.send((*ev).clone());
-   }
-  }
- }
-}
