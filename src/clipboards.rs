@@ -12,6 +12,7 @@ use x11::Clipboard;
 // use x11::xcb::Atom;
 use x11::Atom;
 
+use crate::config::sleep_default;
 use crate::entries::Entries;
 use crate::entries::Entry;
 // use crate::libmain::MyError;
@@ -54,6 +55,10 @@ impl ClipboardSelectionList {
     if selection_string == &s {
      insert = false;
     } else {
+     sleep_default();
+     sleep_default();
+     sleep_default();
+     // TODO : configurable rewrite delay
      self.crw.write(selection_string.clone());
     }
    }
