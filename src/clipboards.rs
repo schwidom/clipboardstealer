@@ -147,7 +147,6 @@ impl ClipboardReaderWriter {
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
- // pub hm: HashMap<String, Arc<Mutex<ClipboardSelectionList>>>,
  pub hm: HashMap<String, ClipboardSelectionList>,
 }
 
