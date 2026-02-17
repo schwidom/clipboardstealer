@@ -12,34 +12,130 @@ use ratatui::{
  Frame,
 };
 
-pub trait FrameNew {
- fn new(frame: &Frame) -> Self;
+// TODO : rename
+pub trait PagerLayout {
+ fn new(frame: &Frame) -> Self
+ where
+  Self: Sized;
+ fn get_title_area(&self) -> &Rect;
+ fn get_main_area(&self) -> &Rect;
+ fn get_second_main_area(&self) -> Option<&Rect>;
+ fn get_status_area(&self) -> &Rect;
 }
-pub struct PagerLayout {
+pub struct PagerLayoutBase {
  pub title_area: Rect,
  pub main_area: Rect,
  pub status_area: Rect,
 }
 
-impl FrameNew for PagerLayout {
+impl PagerLayout for PagerLayoutBase {
  fn new(frame: &Frame) -> Self {
   use Constraint::{Fill, Length, Min};
 
   let vertical = Layout::vertical([Length(1), Min(0), Length(1)]);
   let [title_area, main_area, status_area] = vertical.areas(frame.area());
 
-  // let horizontal = Layout::horizontal([Fill(1); 2]);
-  // let [left_area, right_area] = horizontal.areas(main_area);
-
-  // frame.render_widget(Block::bordered().title("Title Bar"), title_area);
-  // frame.render_widget(Block::bordered().title("Status Bar"), status_area);
-  // frame.render_widget(Block::bordered().title("Left"), left_area);
-  // frame.render_widget(Block::bordered().title("Right"), right_area);
-
   Self {
    title_area,
    main_area,
    status_area,
   }
+ }
+
+ fn get_title_area(&self) -> &Rect {
+  &self.title_area
+ }
+
+ fn get_main_area(&self) -> &Rect {
+  &self.main_area
+ }
+
+ fn get_second_main_area(&self) -> Option<&Rect> {
+  None
+ }
+
+ fn get_status_area(&self) -> &Rect {
+  &self.status_area
+ }
+}
+
+pub struct PagerLayoutTB {
+ pub title_area: Rect,
+ pub main_area_top: Rect,
+ pub main_area_bottom: Rect,
+ pub status_area: Rect,
+}
+
+impl PagerLayout for PagerLayoutTB {
+ fn new(frame: &Frame) -> Self {
+  use Constraint::{Fill, Length, Min, Percentage};
+
+  let vertical = Layout::vertical([Length(1), Percentage(50), Percentage(50), Length(1)]);
+  let [title_area, main_area_top, main_area_down, status_area] = vertical.areas(frame.area());
+
+  Self {
+   title_area,
+   main_area_top,
+   main_area_bottom: main_area_down,
+   status_area,
+  }
+ }
+
+ fn get_title_area(&self) -> &Rect {
+  &self.title_area
+ }
+
+ fn get_main_area(&self) -> &Rect {
+  &self.main_area_top
+ }
+
+ fn get_second_main_area(&self) -> Option<&Rect> {
+  Some(&self.main_area_bottom)
+ }
+
+ fn get_status_area(&self) -> &Rect {
+  &self.status_area
+ }
+}
+
+pub struct PagerLayoutLR {
+ pub title_area: Rect,
+ pub main_area_left: Rect,
+ pub main_area_right: Rect,
+ pub status_area: Rect,
+}
+
+impl PagerLayout for PagerLayoutLR {
+ fn new(frame: &Frame) -> Self {
+  use Constraint::{Fill, Length, Min, Percentage};
+
+  let vertical = Layout::vertical([Length(1), Percentage(100), Length(1)]);
+  let [title_area, main_area, status_area] = vertical.areas(frame.area());
+
+  let horizontal = Layout::horizontal([Percentage(50), Percentage(50)]);
+  let [main_area_left, main_area_right] = horizontal.areas(main_area);
+
+  Self {
+   title_area,
+   main_area_left,
+   main_area_right,
+   status_area,
+  }
+ }
+
+ fn get_title_area(&self) -> &Rect {
+  &self.title_area
+ }
+
+ fn get_main_area(&self) -> &Rect {
+  &self.main_area_left
+ }
+
+ fn get_second_main_area(&self) -> Option<&Rect> {
+  Some(&self.main_area_right)
+ }
+
+ fn get_status_area(&self) -> &Rect {
+  &self.status_area
  }
 }

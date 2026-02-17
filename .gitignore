@@ -3,3 +3,4 @@ target/
 /Cargo.lock
 tmp/
 /log.txt
+/crash.txt

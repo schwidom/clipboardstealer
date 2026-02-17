@@ -6,9 +6,7 @@ use termion::event::{Event, Key};
 
 use std::{
  ffi::c_int,
- sync::
-  mpsc::{self, Receiver, Sender}
- ,
+ sync::mpsc::{self, Receiver, Sender},
 };
 
 use crate::libmain::MyError;
@@ -29,6 +27,7 @@ pub enum MyEvent {
  // CbInsertedClipboard,
  Unused,
  CbChanged(Atom, Option<String>),
+ Tick,
 }
 
 impl MyEvent {

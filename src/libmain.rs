@@ -6,7 +6,7 @@ extern crate clap;
 extern crate termion;
 extern crate x11_clipboard;
 
-use ratatui;
+use ratatui::{self, DefaultTerminal};
 
 use termion::{
  cursor::{Hide, Show},
@@ -32,6 +32,7 @@ use std::{
  rc::Rc,
  sync::mpsc::{self, Receiver, Sender},
  thread::JoinHandle,
+ time::Duration,
 };
 
 use std::io::Stdout;
@@ -85,6 +86,29 @@ use x11::Atom;
 
 // use crate::event::*;
 
+pub struct TicksThread {}
+
+impl TicksThread {
+ fn new() -> Self {
+  Self {}
+ }
+
+ fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
+  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
+   loop {
+    if !ass.is_running() {
+     break Ok(());
+    }
+
+    ass.sender.send(MyEvent::Tick).unwrap();
+
+    thread::sleep(Duration::from_millis(300));
+   }
+  });
+  thread
+ }
+}
+
 /** waits for clipboard events and handles them */
 pub struct ClipboardThread {}
 
@@ -128,7 +152,6 @@ impl ClipboardThread {
 }
 
 /// blocking
-/** sends termion events to MyEventHandler */
 struct TermionLoop {
  stdout_raw: RawTerminal<Stdout>,
 }
@@ -189,6 +212,7 @@ impl MySignalsLoop {
      if !ass.is_running() {
       break;
      }
+     // trace!( "MySignalsLoop: {:?}", signal);
      ass.sender.send(MyEvent::SignalHook(signal)).unwrap();
     }
     sleep_default(); // cgyeofnrzk
@@ -295,12 +319,14 @@ impl<'a> AppStateSender<'a> {
 // WEITERBEI, TODO : define the data, see g6lyj3epcb
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
+ // pub terminal: DefaultTerminal,
 }
 
 impl AppStateReceiverData {
  pub fn new() -> Self {
   Self {
    cbs: Clipboards::new(),
+   // terminal: ratatui::init(),
   }
  }
 }
@@ -355,9 +381,14 @@ impl<'a> AppStateReceiver<'a> {
 
   let mut so = stdout();
 
+  // NOTE: geht nicht in assd (self.data), da vermutlich das terminal gedroppt sein muss am Ende, was aber nicht passiert, wenn es im geleakten 'static appstate ist.
+  // Nach Ende der loop hier wird es aber regulär gedroppt
+  // Meine Vermutung ist korrekt
+  let mut terminal = ratatui::init();
+
   loop {
    let mut current_painter = tsp_stack.last().unwrap_or(&tsp_default).borrow_mut();
-   current_painter.paint(&mut self.data);
+   current_painter.paint(&mut terminal, &mut self.data);
    print!("{}", Hide);
    so.flush().unwrap();
    let ev = self.receiver.recv().unwrap(); // TODO : match
@@ -412,7 +443,9 @@ impl<'a> AppStateReceiver<'a> {
     }
    }
   }
-  print!("{}", Show);
+  // print!("{}", Show); // doesn't get restored by ratatui::restore()
+  // ratatui::restore();
+
   so.flush().unwrap();
  }
 }
@@ -443,6 +476,7 @@ pub fn main() {
  let config = Box::leak(Box::new(Config::from_args(&args)));
 
  // let appstate = AppState::new();
+ // let appstate = Box::leak(Box::new(AppState::new(config)));
  let appstate = Box::leak(Box::new(AppState::new(config)));
 
  match (is_tty(&stdin().as_fd()), is_tty(&stdout().as_fd())) {
@@ -481,6 +515,9 @@ pub fn main() {
   monitor2("ct");
  }
 
+ let mut tt = TicksThread::new();
+ let ttjh = tt.run(&appstate.ass);
+
  let mut ct = ClipboardThread::new();
  let ctjh = ct.run(&appstate.ass);
 
@@ -512,6 +549,8 @@ pub fn main() {
   monitor2("ctjh");
  }
 
+ let _ = ttjh.join(); // needed
+
  let _ = ctjh.join(); // needed
 
  if config.debug {
@@ -524,10 +563,14 @@ pub fn main() {
   monitor2("end");
  }
 
+ // drop(appstate);
+ // thread::sleep(Duration::from_millis(500));
+ print!("{}", Show); // doesn't get restored by ratatui::restore()
+ tl.suspend_raw_mode();
+ stdout().flush();
  ratatui::restore();
  println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
- tl.suspend_raw_mode();
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that
 }
