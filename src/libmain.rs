@@ -94,6 +94,7 @@ impl TicksThread {
  }
 
  fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
+
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    loop {
     if !ass.is_running() {
@@ -124,7 +125,8 @@ impl ClipboardThread {
     .map(|x| ClipboardReaderWriter::new(*x))
     .collect();
 
-   let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
+   // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
+   let mut cb_strings: Vec<_> = crws.iter().map(|x| None).collect();
 
    loop {
     if !ass.is_running() {
