@@ -15,13 +15,14 @@ use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLa
 use crate::libmain::AppStateReceiverData;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
+use crate::tools::tabfix;
 
 use ratatui::layout::{Alignment, Margin};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
 use ratatui::style::{Color, Style};
 use ratatui::text::Text;
-use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph, Widget, Wrap};
 use ratatui::{DefaultTerminal, Terminal};
 use termion::event::{Event, Key};
 use termion::{self, scroll};
@@ -140,9 +141,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let safe_area = rect1.intersection(buf.area); // avoids crash
 
   let all_lines = trim_text_to_rect_with(self.all_lines, safe_area);
+  let all_lines = tabfix(&all_lines);
 
   let paragraph = Paragraph::new(all_lines)
-   // .wrap(Wrap { trim: true }) // doesnt fix panics
    .block(block)
    // .fg(Color::Cyan)
    // .bg(Color::Black)
@@ -152,6 +153,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   // Text::raw(self.all_lines).render(self.rv.pl.main_area.inner(Margin::new(0, 1)), buf);
   // block.render(self.rv.pl.main_area.inner(Margin::new(0, 1)), buf);
   // paragraph.render(rect1, buf);
+  // Clear.render(safe_area, buf); // doesn't fix the tab problem
   paragraph.render(safe_area, buf);
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
@@ -164,14 +166,15 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(buf.area); // avoids crash
    let all_lines2 = trim_text_to_rect_with(self.all_lines2, safe_area2);
+   let all_lines2 = tabfix(&all_lines2);
 
    let paragraph2 = Paragraph::new(all_lines2)
-    // .wrap(Wrap { trim: true }) // doesnt fix panics
     .block(block2)
     // .fg(Color::Cyan)
     // .bg(Color::Black)
     .left_aligned();
 
+   // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
   }
  }

@@ -9,11 +9,7 @@ extern crate x11_clipboard;
 use ratatui::{self, DefaultTerminal};
 
 use termion::{
- cursor::{Hide, Show},
- event::{Event, Key},
- input::TermRead,
- is_tty,
- raw::{IntoRawMode, RawTerminal},
+ clear::All, cursor::{Hide, Show}, event::{Event, Key}, input::TermRead, is_tty, raw::{IntoRawMode, RawTerminal}, screen::IntoAlternateScreen
 };
 
 use signal_hook::consts::signal::*;
@@ -54,7 +50,7 @@ use nu_ansi_term::AnsiGenericString;
 
 use tracing::{event, info, span, trace, Level};
 
-use clap::Parser;
+use clap::{builder::IntoResettable, Parser};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -126,7 +122,7 @@ impl ClipboardThread {
     .collect();
 
    // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
-   let mut cb_strings: Vec<_> = crws.iter().map(|x| None).collect();
+   let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
 
    loop {
     if !ass.is_running() {
@@ -160,10 +156,20 @@ struct TermionLoop {
 
 impl TermionLoop {
  fn new() -> Self {
+  // let x = termion::get_tty().unwrap(); // File
+  // x.into_resettable().
+  // println!("{}", All);
+  // stdin().into_resettable().init();
+
+  // restores terminal state after a zsh exit
+  let magic = "\x1b[?1l\x1b>"; // DECCKM off (normal arrows) + DECKPNM (normal keypad)
+  println!( "{}", magic);
   let stdout_raw = stdout().into_raw_mode();
 
   match stdout_raw {
-   Ok(stdout_raw) => return Self { stdout_raw },
+   Ok(stdout_raw) => { 
+    return Self { stdout_raw }
+  },
    Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
   }
  }
@@ -569,7 +575,7 @@ pub fn main() {
  // thread::sleep(Duration::from_millis(500));
  print!("{}", Show); // doesn't get restored by ratatui::restore()
  tl.suspend_raw_mode();
- stdout().flush();
+ stdout().flush().unwrap();
  ratatui::restore();
  println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 

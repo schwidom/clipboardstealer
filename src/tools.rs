@@ -49,6 +49,9 @@ pub fn cb_get_atoms() -> Atoms {
 }
 
 pub fn flatline(string: &str) -> String {
- string.replace("\n", "") // lcibiwnao0
+ string.replace("\n", "\\n") // lcibiwnao0
 }
 
+pub fn tabfix(string: &str) -> String {
+ string.replace("\t", "   ")
+}
