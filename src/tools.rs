@@ -43,9 +43,13 @@ impl MyTime {
  }
 }
 
-pub fn cb_get_atoms() -> Atoms {
- let cb = Clipboard::new().unwrap(); // TODO : in Struct auslagern
- cb.setter.atoms.clone() // TODO : muss eigentlich einfacher gehen
+use lazy_static::lazy_static;
+
+lazy_static! {
+ pub static ref CB_ATOMS: Atoms = {
+  let cb = Clipboard::new().unwrap();
+  cb.setter.atoms.clone()
+ };
 }
 
 pub fn flatline(string: &str) -> String {

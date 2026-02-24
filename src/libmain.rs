@@ -9,12 +9,19 @@ extern crate x11_clipboard;
 use ratatui::{self, DefaultTerminal};
 
 use termion::{
- clear::All, cursor::{Hide, Show}, event::{Event, Key}, input::TermRead, is_tty, raw::{IntoRawMode, RawTerminal}, screen::IntoAlternateScreen
+ clear::All,
+ cursor::{Hide, Show},
+ event::{Event, Key},
+ input::TermRead,
+ is_tty,
+ raw::{IntoRawMode, RawTerminal},
+ screen::IntoAlternateScreen,
 };
 
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
+use x11rb_protocol::protocol::xproto::AtomEnum;
 // use x11_clipboard::error::Error as X11Error;
 use xcb_1::{
  x::{KeyButMask, QueryPointer},
@@ -43,7 +50,7 @@ use crate::{
  debug::*,
  event::MyEvent,
  termionscreen::{TermionScreenFirstPage, TermionScreenPainter},
- tools::cb_get_atoms,
+ tools::CB_ATOMS,
 };
 
 use nu_ansi_term::AnsiGenericString;
@@ -54,6 +61,9 @@ use clap::{builder::IntoResettable, Parser};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+
+use crate::clipboards::CBType;
+use enum_iterator::all;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -90,7 +100,6 @@ impl TicksThread {
  }
 
  fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
-
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    loop {
     if !ass.is_running() {
@@ -116,9 +125,10 @@ impl ClipboardThread {
 
  fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
-   let crws: Vec<_> = [cb_get_atoms().primary, 2, cb_get_atoms().clipboard]
+   let crws: Vec<_> = all::<CBType>()
+    .collect::<Vec<_>>()
     .iter()
-    .map(|x| ClipboardReaderWriter::new(*x))
+    .map(|x: &CBType| ClipboardReaderWriter::from_cbtype(x))
     .collect();
 
    // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
@@ -135,7 +145,7 @@ impl ClipboardThread {
      if cb_strings2[i] != cb_strings[i] {
       ass
        .sender
-       .send(MyEvent::CbChanged(crws[i].atom(), cb_strings2[i].clone()))
+       .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
        .unwrap();
      }
     }
@@ -163,13 +173,11 @@ impl TermionLoop {
 
   // restores terminal state after a zsh exit
   let magic = "\x1b[?1l\x1b>"; // DECCKM off (normal arrows) + DECKPNM (normal keypad)
-  println!( "{}", magic);
+  println!("{}", magic);
   let stdout_raw = stdout().into_raw_mode();
 
   match stdout_raw {
-   Ok(stdout_raw) => { 
-    return Self { stdout_raw }
-  },
+   Ok(stdout_raw) => return Self { stdout_raw },
    Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
   }
  }
@@ -324,7 +332,6 @@ impl<'a> AppStateSender<'a> {
  }
 }
 
-// WEITERBEI, TODO : define the data, see g6lyj3epcb
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
  // pub terminal: DefaultTerminal,
@@ -371,7 +378,7 @@ impl<'a> AppStateReceiver<'a> {
   struct EventState {
    mouse_button_1_is_pressed: bool,
    shift_is_pressed: bool,
-   cb_changed: Option<(Atom, Option<String>)>,
+   cb_changed: Option<(CBType, Option<String>)>,
   }
 
   let mut event_state = EventState::default();
@@ -380,7 +387,7 @@ impl<'a> AppStateReceiver<'a> {
    fn update_clipboard(&mut self, cbs: &mut Clipboards) {
     if !self.mouse_button_1_is_pressed && !self.shift_is_pressed {
      if let Some((atom, string)) = &self.cb_changed {
-      cbs.insert(*atom, string.clone());
+      cbs.insert(&atom, string.clone());
       self.cb_changed = None;
      }
     }
@@ -443,8 +450,8 @@ impl<'a> AppStateReceiver<'a> {
 
      // MyEvent::CbInserted => todo!(),
      // MyEvent::Unused => todo!(),
-     MyEvent::CbChanged(atom, string) => {
-      event_state.cb_changed = Some((atom, string));
+     MyEvent::CbChanged(cbtype, string) => {
+      event_state.cb_changed = Some((cbtype, string));
       event_state.update_clipboard(&mut self.data.cbs);
      }
      _ => {}

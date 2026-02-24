@@ -9,7 +9,7 @@ use std::{
  sync::mpsc::{self, Receiver, Sender},
 };
 
-use crate::libmain::MyError;
+use crate::{clipboards::CBType, libmain::MyError};
 use x11_clipboard as x11;
 // use x11::xcb::Atom;
 use x11::Atom;
@@ -26,7 +26,7 @@ pub enum MyEvent {
  // CbInsertedSecondary,
  // CbInsertedClipboard,
  Unused,
- CbChanged(Atom, Option<String>),
+ CbChanged(CBType, Option<String>),
  Tick,
 }
 

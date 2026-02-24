@@ -86,8 +86,8 @@ mod tests {
 }
 
 fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
- trace!("trim_text_to_rect_with: rect {:?}", rect);
- trace!("trim_text_to_rect_with: text {:?}", text);
+ // trace!("trim_text_to_rect_with: rect {:?}", rect);
+ // trace!("trim_text_to_rect_with: text {:?}", text);
 
  let max_width = rect.width as usize;
  let max_height = rect.height as usize;
@@ -101,7 +101,7 @@ fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
   .collect::<Vec<_>>();
 
  let ret = trimmed.join("\n");
- trace!("trim_text_to_rect_with: ret {:?}", ret);
+ // trace!("trim_text_to_rect_with: ret {:?}", ret);
  ret
 }
 
@@ -252,7 +252,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
 
-    for (idx, entry) in entries[scroller.get_windowrange()].iter().enumerate() {
+    for (idx, entry) in entries.range(scroller.get_windowrange()).enumerate() {
      let is_cursor = match scroller.get_cursor() {
       None => false,
       Some(value) => idx as u16 == value,
@@ -260,12 +260,13 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
      let cursor_star = if is_cursor { ">" } else { " " };
 
-     let is_selected = entry.is_selected(cbs);
+     // let is_selected = entry.is_selected(cbs);
+     let is_selected = cbs.is_fixated(entry);
 
      let selection_star = if is_selected { "*" } else { " " };
 
      if is_cursor {
-      selected_string = &entry.string;
+      selected_string = &entry.text;
      }
 
      {
@@ -274,9 +275,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        cursor_star,
        selection_star,
        idx + scroller.get_windowposition(), // mqbojcmkot
-       entry.info,
+       entry.cbtype.get_info(),
        entry.get_date_time(),
-       entry.string,
+       entry.text,
        width = numbers_width,
       );
       lines.push(layout.fixline(&s002));
@@ -321,8 +322,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    MyEvent::Termion(Event::Key(Key::Char('s'))) => {
     if let Some(cursor) = self.scroller.get_cursor_in_array() {
      let entries = cbs.get_entries();
-     let entry = &entries[cursor];
-     entry.toggle_selection(&mut cbs);
+     let entry = &entries[cursor].clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
+                                           // entry.toggle_selection(&mut cbs);
+     cbs.toggle_selection(entry);
     }
    }
    MyEvent::Termion(Event::Key(Key::Char('v'))) => {
@@ -332,7 +334,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
       self.config,
       "view entry".to_string(),
-      entry.string.clone(),
+      entry.text.clone(),
      ))));
     }
    }

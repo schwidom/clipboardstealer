@@ -1,83 +1,30 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::TimeDelta;
+use enum_iterator::all;
+use enum_iterator::Sequence;
+use tracing::trace;
 use x11_clipboard as x11;
 // use x11_clipboard::error::Error as X11Error;
 
-use x11::Atoms;
+// use x11::Atoms;
 
 use x11::Clipboard;
 
 // use x11::xcb::Atom;
 use x11::Atom;
+use x11rb_protocol::protocol::xproto::AtomEnum;
 
 use crate::config::sleep_default;
-use crate::entries::Entries;
-use crate::entries::Entry;
+// use crate::entries::Entries;
+// use crate::entries::Entry;
 // use crate::libmain::MyError;
-use crate::tools::cb_get_atoms;
+// use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
-
-/** holds the clipboard information per clipboard type */
-pub struct ClipboardSelectionList {
- pub crw: ClipboardReaderWriter,
- pub captured_from_clipboard: Vec<(MyTime, String)>,
- pub current_selection: Option<usize>, // TODO
-}
-
-/** referred to ClipboardSelectionList */
-#[derive(Clone, PartialEq)]
-pub struct ListChanged(pub bool);
-
-impl ClipboardSelectionList {
- pub fn new(atom: Atom) -> Self {
-  Self {
-   crw: ClipboardReaderWriter::new(atom),
-   captured_from_clipboard: vec![],
-   current_selection: None,
-  }
- }
-
- pub fn get_current_selection(&self) -> (MyTime, String) {
-  match self.current_selection {
-   None => (MyTime::unix_epoch(), "".into()), // TODO
-   Some(idx) => self.captured_from_clipboard.get(idx).unwrap().clone(),
-  }
- }
-
- fn insert(&mut self, string: Option<String>) {
-  if let Some(s) = string {
-   let mut insert: bool = true;
-
-   if let Some(selection_idx) = self.current_selection {
-    let selection_string = &self.captured_from_clipboard[selection_idx].1;
-    if selection_string == &s {
-     insert = false;
-    } else {
-     sleep_default();
-     sleep_default();
-     sleep_default();
-     // TODO : configurable rewrite delay
-     self.crw.write(selection_string.clone());
-    }
-   }
-
-   if insert {
-    let now = MyTime::now();
-    if let Some(last) = self.captured_from_clipboard.last() {
-     let last_time = &last.0;
-     let span = now.timestamp - last_time.timestamp;
-     // TODO : configurable milliseconds
-     if span < TimeDelta::milliseconds(300) {
-      self.captured_from_clipboard.pop();
-     }
-    }
-    self.captured_from_clipboard.push((now, s.clone()));
-   }
-  }
- }
-}
+use crate::tools::CB_ATOMS;
 
 // impl From<X11Error> for MyError {
 //  fn from(value: X11Error) -> Self {
@@ -85,23 +32,77 @@ impl ClipboardSelectionList {
 //  }
 // }
 
+// let mut cfmap = HashMap::new();
+
+#[derive(Sequence, PartialEq, Eq, Hash, Debug, Clone)]
+pub enum CBType {
+ Primary,   // mouse selection, shift-ins, middle mouse
+ Secondary, // unknown keys, ancient clipboard
+ Clipboard, // [shift] ( ctrl-c / ctrl-v )
+}
+
+impl CBType {
+ fn from_atom(atom: Atom) -> Self {
+  let p: Atom = AtomEnum::PRIMARY.into(); // 1, CB_ATOMS.primary
+  let s: Atom = AtomEnum::SECONDARY.into(); // 2
+  let c: Atom = CB_ATOMS.clipboard;
+
+  if atom == p {
+   Self::Primary
+  } else if atom == s {
+   Self::Secondary
+  } else if atom == c {
+   Self::Clipboard
+  } else {
+   panic!()
+  }
+ }
+
+ fn get_atom(&self) -> Atom {
+  let p: Atom = AtomEnum::PRIMARY.into(); // 1, CB_ATOMS.primary
+  let s: Atom = AtomEnum::SECONDARY.into(); // 2
+  let c: Atom = CB_ATOMS.clipboard;
+
+  match self {
+   CBType::Primary => p,
+   CBType::Secondary => s,
+   CBType::Clipboard => c,
+  }
+ }
+
+ pub fn get_info(&self) -> String {
+  match self {
+   CBType::Primary => "p",
+   CBType::Secondary => "s",
+   CBType::Clipboard => "c",
+  }
+  .into()
+ }
+}
+
 /** simplifies the reading / writing to a specific clipboard ( primary and clipboard) */
 pub struct ClipboardReaderWriter {
  cb: Clipboard,
  atom: Atom,
- atoms: Atoms,
+ // atoms: Atoms,
 }
 
 impl ClipboardReaderWriter {
- pub fn new(atom: Atom) -> Self {
-  let cb = Clipboard::new().unwrap(); // TODO : in Struct auslagern
-  let atoms = cb.setter.atoms.clone();
-
-  Self { cb, atom, atoms }
+ pub fn from_atom(atom: Atom) -> Self {
+  let cb = Clipboard::new().unwrap();
+  Self { cb, atom }
  }
 
- pub fn atom(&self) -> Atom {
-  self.atom
+ pub fn from_cbtype(cbtype: &CBType) -> Self {
+  let cb = Clipboard::new().unwrap();
+  Self {
+   cb,
+   atom: cbtype.get_atom(),
+  }
+ }
+
+ pub fn cbtype(&self) -> CBType {
+  CBType::from_atom(self.atom)
  }
 
  // TODO : when I do "$echo 'secondary' | xclip -i -t secondary" then I get an error here
@@ -120,47 +121,89 @@ impl ClipboardReaderWriter {
  // clipboard
 
  pub fn read(&self) -> Option<String> {
-  let cb_atoms = &self.atoms;
   let selection = self.atom;
 
   match self
    .cb
-   .load(selection, cb_atoms.utf8_string, cb_atoms.property, Duration::from_secs(3))
+   .load(selection, CB_ATOMS.utf8_string, CB_ATOMS.property, Duration::from_secs(3))
   {
    Ok(selection_u8) => Some(String::from_utf8_lossy(selection_u8.as_slice()).into()),
    Err(_) => None,
   }
-
-  // let selection_u8 = self
-  //  .cb
-  //  .load(selection, cb_atoms.utf8_string, cb_atoms.property, Duration::from_secs(3))
-  //  .unwrap();
-  // String::from_utf8_lossy(selection_u8.as_slice()).into()
  }
 
  pub fn write(&self, s: String) -> bool {
-  let cb_atoms = &self.atoms;
   let value = s.as_bytes();
   let selection = self.atom;
 
   self
    .cb
-   .store(selection, cb_atoms.utf8_string, value)
+   .store(selection, CB_ATOMS.utf8_string, value)
    .map_or_else(|_| false, |_| true)
+ }
+}
+
+#[derive(Debug)]
+pub struct CBEntry {
+ // see old Entry from entries.rs
+ pub cbtype: CBType,
+ pub timestamp: MyTime,
+ pub text: String,
+}
+
+impl CBEntry {
+ pub fn get_date_time(&self) -> String {
+  let ret = format!("{}", self.timestamp);
+  // 2025-02-24 20:25:40+01:00
+  ret[0..19].into() // 2025-02-24 20:25:40
+ }
+}
+pub struct ClipboardFixation {
+ pub crw: ClipboardReaderWriter,
+ pub fixation: Option<Rc<CBEntry>>,
+}
+
+impl ClipboardFixation {
+ fn from_atom(atom: Atom) -> Self {
+  Self {
+   crw: ClipboardReaderWriter::from_atom(atom),
+   fixation: None,
+  }
+ }
+
+ fn from_cbtype(cbtype: &CBType) -> Self {
+  Self {
+   crw: ClipboardReaderWriter::from_cbtype(cbtype),
+   fixation: None,
+  }
+ }
+
+ fn restore(&self) {
+  if let Some(v) = &self.fixation {
+   self.crw.write(v.text.clone());
+  }
  }
 }
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
- pub hm: HashMap<String, ClipboardSelectionList>,
+ // pub hm: HashMap<String, ClipboardSelectionList>,
+ // pub crw: ClipboardReaderWriter,
+ pub cbentries: VecDeque<Rc<CBEntry>>,
+ // NOTE : no weak pointer here, Optional<Rc> is better,
+ // even if entry disappears from the list (currently not possible but maybe later)
+ // it can still be selected
+ // pub fixation: HashMap< String, Option<Rc<CBEntry>>>,
+ // pub cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
+ // pub cfmap: HashMap<String, ClipboardFixation>,
+ pub cfmap: HashMap<CBType, ClipboardFixation>,
 }
 
 pub fn atom_to_string(atom: u32) -> String {
- let cb_atoms = cb_get_atoms();
  match atom {
-  x if x == cb_atoms.primary => "p",
+  x if x == CB_ATOMS.primary => "p",
   2 => "s",
-  x if x == cb_atoms.clipboard => "c",
+  x if x == CB_ATOMS.clipboard => "c",
   _ => panic!(""),
  }
  .to_string()
@@ -168,33 +211,112 @@ pub fn atom_to_string(atom: u32) -> String {
 
 impl Clipboards {
  pub fn new() -> Self {
-  let cb_atoms = cb_get_atoms();
-  let mut hm = HashMap::new();
-  // shift ins / middle mouse
-  hm.insert("p".to_string(), ClipboardSelectionList::new(cb_atoms.primary));
-  // echo 123 | xclip -i -selection primary
-  // see /usr/include/X11/Xatom.h : XA_SECONDARY
-  hm.insert("s".to_string(), ClipboardSelectionList::new(2));
-  // ctrl-c/ctrl-v
-  hm.insert("c".to_string(), ClipboardSelectionList::new(cb_atoms.clipboard));
-  Self { hm }
- }
+  let cfmap: HashMap<CBType, ClipboardFixation> = all::<CBType>()
+   .map(|cbtype| (cbtype.clone(), ClipboardFixation::from_cbtype(&cbtype)))
+   .collect();
 
- pub(crate) fn insert(&mut self, atom: u32, string: Option<String>) {
-  self
-   .hm
-   .get_mut(&atom_to_string(atom))
-   .unwrap()
-   .insert(string);
- }
-
- pub fn get_entries(&mut self) -> Vec<Entry> {
-  let mut entries = vec![];
-  for (name, cb) in &self.hm {
-   entries.append(&mut Entries::from_csl(name, cb));
+  Self {
+   cbentries: VecDeque::new(),
+   cfmap,
   }
+ }
 
-  entries.sort_by(|x, y| y.timestamp.cmp(&x.timestamp));
-  entries
+ pub(crate) fn insert(&mut self, cbtype: &CBType, string: Option<String>) {
+  if let Some(s) = string {
+   let mut insert: bool = true;
+
+   {
+    // let cf: &ClipboardFixation = &self.cfmap[AsRef::<String>::as_ref(&atom_string)];
+    let cf: &ClipboardFixation = &self.cfmap[&cbtype];
+
+    trace!("fixation : {:?}", cf.fixation);
+
+    if let Some(fixation) = &cf.fixation {
+     if fixation.text == s {
+      insert = false;
+     } else {
+      sleep_default();
+      sleep_default();
+      sleep_default();
+      // TODO : configurable rewrite delay
+      cf.restore();
+     }
+    }
+   }
+
+   if insert {
+    let now = MyTime::now();
+    if let Some(last) = self.cbentries.front() {
+     let last_time = &last.timestamp;
+     let span = now.timestamp - last_time.timestamp;
+     // TODO : configurable milliseconds
+     if cbtype == &last.cbtype && span < TimeDelta::milliseconds(300) {
+      self.cbentries.pop_front();
+     }
+    }
+    self.cbentries.push_front(
+     Rc::new(CBEntry {
+      cbtype: cbtype.clone(),
+      timestamp: now,
+      text: s.clone(),
+     }), // (now, s.clone())
+    );
+   }
+  }
+ }
+
+ // TODO : maybe this functino can be ditched because cbentries is public
+ pub fn get_entries(&self) -> &VecDeque<Rc<CBEntry>> {
+  &self.cbentries
+ }
+
+ pub fn is_fixated(&self, cbentry: &Rc<CBEntry>) -> bool {
+  self
+   .cfmap
+   .iter()
+   .filter(|x| match &x.1.fixation {
+    Some(f) => Rc::<CBEntry>::ptr_eq(&f, cbentry),
+    None => false,
+   })
+   .count()
+   != 0
+ }
+
+ // pub fn is_fixated_atom_text(&self, atom_string: &str, text: &str) -> bool {
+ //  let cf: &ClipboardFixation = &self.cfmap[atom_string];
+
+ //  match &cf.fixation {
+ //   Some(f) => f.string == text,
+ //   None => false,
+ //  }
+ // }
+
+ // pub fn get_fixation_atom_text(&self, atom_string: &str) -> Option<&str> {
+ //  let cf: &ClipboardFixation = &self.cfmap[atom_string];
+
+ //  match &cf.fixation {
+ //   Some(f) => Some(&f.string),
+ //   None => None,
+ //  }
+ // }
+
+ pub(crate) fn toggle_selection(&mut self, cbentry: &Rc<CBEntry>) {
+  let cf = &mut self.cfmap.get_mut(&cbentry.cbtype).unwrap();
+
+  trace!("toggle_selection");
+
+  let insert = match &cf.fixation {
+   Some(f) => !Rc::<CBEntry>::ptr_eq(&f, cbentry),
+   None => true,
+  };
+
+  trace!("toggle_selection : insert : {insert}");
+
+  if insert {
+   cf.fixation = Some(Rc::clone(cbentry));
+   cf.restore();
+  } else {
+   cf.fixation = None
+  }
  }
 }
