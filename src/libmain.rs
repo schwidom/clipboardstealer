@@ -21,7 +21,10 @@ use termion::{
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
-use x11rb_protocol::protocol::xproto::AtomEnum;
+use x11rb_protocol::protocol::{
+ shape::Op,
+ xproto::{AtomEnum, OpenFontRequest},
+};
 // use x11_clipboard::error::Error as X11Error;
 use xcb_1::{
  x::{KeyButMask, QueryPointer},
@@ -30,8 +33,10 @@ use xcb_1::{
 
 use std::{
  cell::RefCell,
+ fs::{read_to_string, OpenOptions},
  io::Write,
- os::fd::AsFd,
+ os::{fd::AsFd, unix::fs::OpenOptionsExt},
+ path::Path,
  rc::Rc,
  sync::mpsc::{self, Receiver, Sender},
  thread::JoinHandle,
@@ -72,6 +77,10 @@ pub struct Args {
  pub(crate) debug: bool,
  #[arg(long, help = "writes debug information into file")]
  pub(crate) debugfile: Option<String>,
+ #[arg(long, help = "appends clipboard information to file")]
+ pub(crate) append_ndjson: Option<String>,
+ #[arg(long, help = "reads clipboard information from file")]
+ pub(crate) load_ndjson: Vec<String>,
 }
 
 pub enum MyError {
@@ -338,9 +347,28 @@ pub struct AppStateReceiverData {
 }
 
 impl AppStateReceiverData {
- pub fn new() -> Self {
+ pub fn new(config: &'static Config) -> Self {
+  let mut cbs = Clipboards::new();
+  for load_ndjson in &config.load_ndjson {
+   let p_load_ndjson = Path::new(load_ndjson);
+   // let fs = OpenOptions::new().read(true).open(p_load_ndjson).unwrap();
+   let content = read_to_string(p_load_ndjson).unwrap();
+   let mut deserializer = serde_json::Deserializer::from_str(&content);
+   let svec = deserializer
+    .into_iter::<CBEntry>()
+    .map(|x| x.unwrap())
+    .collect::<Vec<_>>();
+
+   for cbentry in svec {
+    cbs.cbentries.push_back(AppendedCBEntry {
+     // TODO : put this part in Clipboards
+     appended: true,
+     cbentry: Rc::new(cbentry),
+    });
+   }
+  }
   Self {
-   cbs: Clipboards::new(),
+   cbs,
    // terminal: ratatui::init(),
   }
  }
@@ -359,7 +387,7 @@ impl<'a> AppStateReceiver<'a> {
    running,
    receiver,
    config,
-   data: AppStateReceiverData::new(),
+   data: AppStateReceiverData::new(config),
   }
  }
 
@@ -453,6 +481,12 @@ impl<'a> AppStateReceiver<'a> {
      MyEvent::CbChanged(cbtype, string) => {
       event_state.cb_changed = Some((cbtype, string));
       event_state.update_clipboard(&mut self.data.cbs);
+     }
+
+     MyEvent::Tick => {
+      if let Some(append_ndjson_filename) = &self.config.append_ndjson {
+       self.data.cbs.append_ndjson(append_ndjson_filename);
+      }
      }
      _ => {}
     }

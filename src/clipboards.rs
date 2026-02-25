@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::TimeDelta;
 use enum_iterator::all;
 use enum_iterator::Sequence;
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::trace;
 use x11_clipboard as x11;
 // use x11_clipboard::error::Error as X11Error;
@@ -34,7 +39,7 @@ use crate::tools::CB_ATOMS;
 
 // let mut cfmap = HashMap::new();
 
-#[derive(Sequence, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(Sequence, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub enum CBType {
  Primary,   // mouse selection, shift-ins, middle mouse
  Secondary, // unknown keys, ancient clipboard
@@ -143,7 +148,7 @@ impl ClipboardReaderWriter {
  }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CBEntry {
  // see old Entry from entries.rs
  pub cbtype: CBType,
@@ -185,11 +190,16 @@ impl ClipboardFixation {
  }
 }
 
+pub struct AppendedCBEntry {
+ pub appended: bool,
+ pub cbentry: Rc<CBEntry>,
+}
+
 /** managed clipboards by [crate::libmain::ClipboardThread] */
 pub struct Clipboards {
  // pub hm: HashMap<String, ClipboardSelectionList>,
  // pub crw: ClipboardReaderWriter,
- pub cbentries: VecDeque<Rc<CBEntry>>,
+ pub cbentries: VecDeque<AppendedCBEntry>,
  // NOTE : no weak pointer here, Optional<Rc> is better,
  // even if entry disappears from the list (currently not possible but maybe later)
  // it can still be selected
@@ -247,27 +257,51 @@ impl Clipboards {
    if insert {
     let now = MyTime::now();
     if let Some(last) = self.cbentries.front() {
-     let last_time = &last.timestamp;
+     let last_time = &last.cbentry.timestamp;
      let span = now.timestamp - last_time.timestamp;
      // TODO : configurable milliseconds
-     if cbtype == &last.cbtype && span < TimeDelta::milliseconds(300) {
+     if cbtype == &last.cbentry.cbtype && span < TimeDelta::milliseconds(300) {
       self.cbentries.pop_front();
      }
     }
-    self.cbentries.push_front(
-     Rc::new(CBEntry {
+    self.cbentries.push_front(AppendedCBEntry {
+     appended: false,
+     cbentry: Rc::new(CBEntry {
       cbtype: cbtype.clone(),
       timestamp: now,
       text: s.clone(),
      }), // (now, s.clone())
-    );
+    });
    }
   }
  }
 
- // TODO : maybe this functino can be ditched because cbentries is public
- pub fn get_entries(&self) -> &VecDeque<Rc<CBEntry>> {
+ pub fn get_entries(&self) -> &VecDeque<AppendedCBEntry> {
   &self.cbentries
+ }
+
+ pub(crate) fn append_ndjson(&mut self, append_ndjson_filename: &str) {
+  // panic!("append_ndjson_filename {}", append_ndjson_filename);
+  let mut fd = OpenOptions::new()
+   .create(true)
+   .append(true)
+   .open(Path::new(append_ndjson_filename))
+   .unwrap();
+
+  let now = MyTime::now();
+
+  for cbentry in &mut self.cbentries {
+   if cbentry.appended {
+    break;
+   } else {
+    // Serialize
+    let span = now.timestamp - cbentry.cbentry.timestamp.timestamp;
+    if span > TimeDelta::milliseconds(300) {
+     write!(fd, "{}", serde_json::to_string(&*cbentry.cbentry).unwrap()).unwrap();
+     cbentry.appended = true;
+    }
+   }
+  }
  }
 
  pub fn is_fixated(&self, cbentry: &Rc<CBEntry>) -> bool {

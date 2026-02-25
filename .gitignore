@@ -4,3 +4,4 @@ target/
 tmp/
 /log.txt
 /crash.txt
+/append_demo.ndjson

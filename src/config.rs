@@ -5,8 +5,9 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_millis(30);
 // TODO : to constants
 pub const USAGE: &str = r"
 
-clipboardstealer [--debug] [--debugfile <DEBUGFILE>]
+clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...]
 
+- is a clipboard manager
 - runs in a terminal window, 
 - captures the X11 clipboards named: primary, secondary and clipboard
 - allows selection of all three of them
@@ -24,6 +25,7 @@ clipboardstealer [--debug] [--debugfile <DEBUGFILE>]
  (s)elect ... selects the chosen entry and 
               enforces it for the specific 
               primary, secondary or clipboard clipboards
+ (fF)lip ... the layout
 
  (q)uit ... exits a screen
  e(x)it ... exits the program
@@ -41,6 +43,8 @@ pub fn sleep_default() {
 pub struct Config {
  pub debug: bool,
  pub debugfile: Option<String>,
+ pub append_ndjson: Option<String>,
+ pub load_ndjson: Vec<String>,
 }
 
 use crate::libmain::Args;
@@ -70,6 +74,8 @@ impl Config {
   Self {
    debug: args.debug,
    debugfile: args.debugfile.clone(),
+   append_ndjson: args.append_ndjson.clone(),
+   load_ndjson: args.load_ndjson.clone(),
   }
  }
 }

@@ -253,6 +253,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
 
     for (idx, entry) in entries.range(scroller.get_windowrange()).enumerate() {
+     let entry = &entry.cbentry;
      let is_cursor = match scroller.get_cursor() {
       None => false,
       Some(value) => idx as u16 == value,
@@ -322,8 +323,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    MyEvent::Termion(Event::Key(Key::Char('s'))) => {
     if let Some(cursor) = self.scroller.get_cursor_in_array() {
      let entries = cbs.get_entries();
-     let entry = &entries[cursor].clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
-                                           // entry.toggle_selection(&mut cbs);
+     let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
+                                                   // entry.toggle_selection(&mut cbs);
      cbs.toggle_selection(entry);
     }
    }
@@ -334,7 +335,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
       self.config,
       "view entry".to_string(),
-      entry.text.clone(),
+      entry.cbentry.text.clone(),
      ))));
     }
    }
