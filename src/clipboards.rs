@@ -297,7 +297,7 @@ impl Clipboards {
     // Serialize
     let span = now.timestamp - cbentry.cbentry.timestamp.timestamp;
     if span > TimeDelta::milliseconds(300) {
-     write!(fd, "{}", serde_json::to_string(&*cbentry.cbentry).unwrap()).unwrap();
+     write!(fd, "{}\n", serde_json::to_string(&*cbentry.cbentry).unwrap()).unwrap();
      cbentry.appended = true;
     }
    }
