@@ -7,13 +7,24 @@ pub const USAGE: &str = r"
 
 clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...]
 
+Overview:
+
 - is a clipboard manager
 - runs in a terminal window, 
 - captures the X11 clipboards named: primary, secondary and clipboard
+- works also with xwayland (tested on debian 13)
 - allows selection of all three of them
-- enforces the user choice
+- enforces the user choice (on shortcut s)
 
-- Keys: 
+Installation:
+
+- apt-get install libxcb1-dev # needed
+- cargo install clipboardstealer
+
+- this crate is not intended to be used as a library
+
+
+Keys: 
 
  orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
  orientation: Cursor Left, Cursor Right (not implemented yet)
