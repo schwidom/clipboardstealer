@@ -17,7 +17,7 @@ use crate::pager::Pager;
 use crate::scroller::Scroller;
 use crate::tools::tabfix;
 
-use ratatui::layout::{Alignment, Margin};
+use ratatui::layout::{Alignment, Margin, Position, Rect};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
 use ratatui::style::{Color, Style};
@@ -85,6 +85,7 @@ mod tests {
  }
 }
 
+// TODO : rename  to trim_text_to_rect
 fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
  // trace!("trim_text_to_rect_with: rect {:?}", rect);
  // trace!("trim_text_to_rect_with: text {:?}", text);
@@ -115,6 +116,9 @@ impl RatatuiVariables {
   Self { pl }
  }
 }
+
+/// the TwoScreenDefaultWidget paints in the areas of the
+/// rv.pl (RatatuiVariables . PagerLayout)
 
 struct TwoScreenDefaultWidget<'a> {
  helpline: &'a str,
@@ -177,20 +181,22 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
   }
+  // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
  }
 }
 
-pub struct TermionScreenFirstPage {
- config: &'static Config,
- scroller: Scroller,
- layout: Layout,
- flipstate: u8,
-}
+/// Tsp ... TermionScreenPainter
+///
+/// returned from TermionScreenPainter::handle_event determines the next TermionScreenPainter
+///
+/// replaces the current Tsp or lays it onto the stack
 
 pub enum NextTsp {
  NoNextTsp,
  Replace(Rc<RefCell<dyn TermionScreenPainter>>),
  Stack(Rc<RefCell<dyn TermionScreenPainter>>),
+ Quit,
+ PopThis,
 }
 
 pub trait TermionScreenPainter {
@@ -199,6 +205,71 @@ pub trait TermionScreenPainter {
  //  Self: Sized;
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData);
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp;
+ fn is_sticky_dialog(&self) -> bool {
+  false
+ }
+}
+
+pub struct TermionScreenStatusBarDialogYN {
+ config: &'static Config,
+ tsp_before: Rc<RefCell<dyn TermionScreenPainter>>,
+ question: String,
+}
+
+impl TermionScreenStatusBarDialogYN {
+ pub fn new(
+  config: &'static Config,
+  tsp_before: Rc<RefCell<dyn TermionScreenPainter>>,
+  question: String,
+ ) -> Self {
+  Self {
+   config,
+   tsp_before,
+   question,
+  }
+ }
+}
+
+impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
+ fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
+  let rv = &RatatuiVariables::new::<PagerLayoutBase>(terminal);
+
+  // if let Some(rc) = &self.tsp_before {
+  //  // rc.borrow_mut().handle_event(&MyEvent::Tick, assd);
+  //  rc.borrow_mut().paint(terminal, assd);
+  // }
+
+  //  writes in the correct area but overwrites the upper part
+  terminal.draw(|frame| {
+   frame.render_widget(
+    Paragraph::new(self.question.clone()),
+    rv.pl.get_status_area().intersection(frame.area()),
+   )
+  });
+ }
+
+ fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
+  // if let Some(rc) = &self.tsp_before {
+  //  // rc.borrow_mut().handle_event(evt, assd); // TODO : filter events
+  // }
+
+  match evt {
+   MyEvent::Termion(Event::Key(Key::Char('y'))) => NextTsp::Quit,
+   MyEvent::Termion(Event::Key(Key::Char('n'))) => NextTsp::PopThis,
+   _ => NextTsp::NoNextTsp,
+  }
+ }
+
+ fn is_sticky_dialog(&self) -> bool {
+  true
+ }
+}
+
+pub struct TermionScreenFirstPage {
+ config: &'static Config,
+ scroller: Scroller,
+ layout: Layout,
+ flipstate: u8,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -221,6 +292,8 @@ impl TermionScreenFirstPage {
 }
 
 impl TermionScreenPainter for TermionScreenFirstPage {
+ /// the paint method opens a TwoScreenDefaultWidget which is later painted
+ /// by the terminal.draw method
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
   let scroller = &mut self.scroller;
   let layout = &mut self.layout;

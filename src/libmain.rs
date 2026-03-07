@@ -395,6 +395,10 @@ impl<'a> AppStateReceiver<'a> {
   self.running.load(Ordering::Relaxed)
  }
 
+ fn set_stopping(&self) {
+  self.running.store(false, Ordering::Relaxed);
+ }
+
  fn run_loop(&mut self) {
   // self.running.store(true, Ordering::Relaxed);
   assert!(self.is_running());
@@ -430,7 +434,7 @@ impl<'a> AppStateReceiver<'a> {
   let mut terminal = ratatui::init();
 
   loop {
-   let mut current_painter = tsp_stack.last().unwrap_or(&tsp_default).borrow_mut();
+   let mut current_painter = tsp_stack.last().unwrap_or(&tsp_default).borrow_mut(); // pfna784hof
    current_painter.paint(&mut terminal, &mut self.data);
    print!("{}", Hide);
    so.flush().unwrap();
@@ -450,18 +454,42 @@ impl<'a> AppStateReceiver<'a> {
      }
     }
     crate::termionscreen::NextTsp::Stack(rc) => tsp_stack.push(rc),
+    crate::termionscreen::NextTsp::Quit => {
+     self.set_stopping();
+     break;
+    }
+    crate::termionscreen::NextTsp::PopThis => {
+     tsp_stack.pop();
+    }
    }
    if ev.is_stop_event() {
-    self.running.store(false, Ordering::Relaxed);
-    break;
+    let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
+
+    if !tsp_before.borrow().is_sticky_dialog() {
+     tsp_stack.push(Rc::new(RefCell::new(
+      crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+       self.config,
+       tsp_before,
+       "exit? y/n".to_string(),
+      ),
+     )));
+    }
    } else {
     match ev {
      MyEvent::Termion(Event::Key(Key::Char('q'))) => {
-      if tsp_stack.is_empty() {
-       self.running.store(false, Ordering::Relaxed);
-       break;
-      } else {
-       tsp_stack.pop();
+      let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
+      if !tsp_before.borrow().is_sticky_dialog() {
+       if tsp_stack.is_empty() {
+        tsp_stack.push(Rc::new(RefCell::new(
+         crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+          self.config,
+          tsp_before,
+          "exit? y/n".to_string(),
+         ),
+        )));
+       } else {
+        tsp_stack.pop();
+       }
       }
      }
      // MyEvent::Termion(event) => todo!(),

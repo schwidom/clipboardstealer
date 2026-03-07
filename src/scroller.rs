@@ -14,7 +14,6 @@ pub struct Scroller {
 
 // TODO : in tools
 impl Scroller {
-
  pub fn new() -> Self {
   Self {
    windowlength: 0,
@@ -422,6 +421,7 @@ mod tests {
 
  #[test]
  fn test_option_comparison_001() {
+  assert!(Some(-1) < Some(1));
   assert!(None < Some(1));
   assert!(None < Some(0));
   assert!(None < Some(-1));
