@@ -37,6 +37,7 @@ Keys:
               enforces it for the specific 
               primary, secondary or clipboard clipboards
  (fF)lip ... the layout
+ (w)rap ... wraps the lines
 
  (q)uit ... exits a screen
  e(x)it ... exits the program

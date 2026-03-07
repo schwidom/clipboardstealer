@@ -29,6 +29,7 @@ Overview:
                enforces it for the specific 
                primary or secondary clipboard clipboards
   (fF)lip ... the layout
+  (w)rap ... wraps the lines
 
 
   (q)uit ... exits a screen

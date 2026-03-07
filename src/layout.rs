@@ -46,11 +46,11 @@ impl Layout {
    .collect()
  }
 
- pub fn print_line_wrap(&mut self) {}
- pub fn print_line_cut(&mut self, line: &str) {
-  print!("{}", termion::cursor::Goto(1, self.current_line));
-  print!("{}", self.fixline(line));
-  print!("{}", termion::clear::UntilNewline);
-  self.current_line += 1;
- }
+ // pub fn print_line_wrap(&mut self) {}
+ // pub fn print_line_cut(&mut self, line: &str) {
+ //  print!("{}", termion::cursor::Goto(1, self.current_line));
+ //  print!("{}", self.fixline(line));
+ //  print!("{}", termion::clear::UntilNewline);
+ //  self.current_line += 1;
+ // }
 }

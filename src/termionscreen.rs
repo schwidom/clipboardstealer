@@ -127,6 +127,8 @@ struct TwoScreenDefaultWidget<'a> {
  rv: &'a RatatuiVariables,
  all_lines: &'a str,
  all_lines2: &'a str,
+ wrapped1: bool,
+ wrapped2: bool,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -134,8 +136,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  where
   Self: Sized,
  {
+  let title = self.main_title.to_string() + if self.wrapped1 { " (w)" } else { "" };
+
   let block = Block::bordered()
-   .title(self.main_title)
+   .title(title)
    .title_alignment(Alignment::Left)
    // .style(Style::new().fg(Color::Blue))
    .border_type(BorderType::Rounded);
@@ -144,14 +148,17 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(buf.area); // avoids crash
 
-  let all_lines = trim_text_to_rect_with(self.all_lines, safe_area);
+  let all_lines = self.all_lines;
   let all_lines = tabfix(&all_lines);
+  let all_lines =
+   if self.wrapped1 { all_lines } else { trim_text_to_rect_with(self.all_lines, safe_area) };
 
-  let paragraph = Paragraph::new(all_lines)
-   .block(block)
-   // .fg(Color::Cyan)
-   // .bg(Color::Black)
-   .left_aligned();
+  // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
+
+  let paragraph = Paragraph::new(all_lines).block(block).left_aligned();
+
+  // weue806j1y
+  let paragraph = if !self.wrapped1 { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
 
   Text::raw(self.helpline).render(*self.rv.pl.get_title_area(), buf);
   // Text::raw(self.all_lines).render(self.rv.pl.main_area.inner(Margin::new(0, 1)), buf);
@@ -161,22 +168,28 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   paragraph.render(safe_area, buf);
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
+   let title2 = self.second_title.to_string() + if self.wrapped2 { " (w)" } else { "" };
    let block2 = Block::bordered()
-    .title(self.second_title)
+    .title(title2)
     .title_alignment(Alignment::Left)
     .border_type(BorderType::Rounded);
 
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(buf.area); // avoids crash
-   let all_lines2 = trim_text_to_rect_with(self.all_lines2, safe_area2);
-   let all_lines2 = tabfix(&all_lines2);
 
-   let paragraph2 = Paragraph::new(all_lines2)
-    .block(block2)
-    // .fg(Color::Cyan)
-    // .bg(Color::Black)
-    .left_aligned();
+   let all_lines2 = self.all_lines2;
+   let all_lines2 = tabfix(&all_lines2);
+   let all_lines2 = if self.wrapped2 {
+    self.all_lines2.to_owned()
+   } else {
+    trim_text_to_rect_with(self.all_lines2, safe_area2)
+   };
+
+   let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
+
+   // weue806j1y
+   let paragraph2 = if !self.wrapped2 { paragraph2 } else { paragraph2.wrap(Wrap { trim: false }) };
 
    // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
@@ -277,6 +290,7 @@ pub struct TermionScreenFirstPage {
  scroller: Scroller,
  layout: Layout,
  flipstate: u8,
+ wrapped: bool,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -287,6 +301,7 @@ impl TermionScreenFirstPage {
    scroller: Scroller::new(),
    layout: Layout::new(),
    flipstate: 1,
+   wrapped: false,
   }
  }
 
@@ -375,6 +390,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      // tsfp: &self,
      all_lines: &all_lines,
      all_lines2: &selected_string,
+     wrapped1: false,
+     wrapped2: self.wrapped,
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -419,6 +436,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      ))));
     }
    }
+   MyEvent::Termion(Event::Key(Key::Char('w'))) => {
+    self.wrapped = !self.wrapped;
+   }
    _ => {
     // Pager::handle_event(&mut scroller, &evt);
     Pager::handle_event(&mut self.scroller, evt);
@@ -434,6 +454,7 @@ pub struct TermionScreenViewPage {
  scroller: Scroller,
  layout: Layout,
  text: String,
+ wrapped: bool,
 }
 
 impl TermionScreenViewPage {
@@ -447,6 +468,7 @@ impl TermionScreenViewPage {
    scroller: Scroller::new(),
    layout: Layout::new(),
    text,
+   wrapped: false,
   }
  }
 }
@@ -489,7 +511,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
       width = numbers_width,
      );
 
-     lines.push(layout.fixline(&s002));
+     lines.push(if self.wrapped { s002.to_string() } else { layout.fixline(&s002) });
 
      // layout.print_line_cut(&s002);
     }
@@ -505,6 +527,8 @@ impl TermionScreenPainter for TermionScreenViewPage {
     // tsfp: &self,
     all_lines: &all_lines,
     all_lines2: "unused",
+    wrapped1: self.wrapped,
+    wrapped2: false,
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -513,6 +537,10 @@ impl TermionScreenPainter for TermionScreenViewPage {
 
  fn handle_event(&mut self, evt: &MyEvent, _assd: &mut AppStateReceiverData) -> NextTsp {
   match evt {
+   MyEvent::Termion(Event::Key(Key::Char('w'))) => {
+    self.wrapped = !self.wrapped;
+   }
+
    //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
    _ => {
     // Pager::handle_event(&mut scroller, &evt);
