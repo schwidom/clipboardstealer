@@ -205,6 +205,10 @@ pub trait TermionScreenPainter {
  //  Self: Sized;
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData);
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp;
+ /// a dialog is sticky if you cannot quit (q) or exit (x) from it
+ /// or put another dialog on top of the dialogstack
+ ///
+ /// it is currently used for the exit dialog
  fn is_sticky_dialog(&self) -> bool {
   false
  }
@@ -212,6 +216,9 @@ pub trait TermionScreenPainter {
 
 pub struct TermionScreenStatusBarDialogYN {
  config: &'static Config,
+ /// tsp_before is intended to allow the display of the previous dialog in a frozen state while the exit dialog is in effect
+ ///
+ /// currently is it not used
  tsp_before: Rc<RefCell<dyn TermionScreenPainter>>,
  question: String,
 }
