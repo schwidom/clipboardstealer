@@ -190,6 +190,7 @@ impl ClipboardFixation {
  }
 }
 
+#[derive(Clone)]
 pub struct AppendedCBEntry {
  pub appended: bool,
  pub cbentry: Rc<CBEntry>,

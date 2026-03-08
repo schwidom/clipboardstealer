@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::io::Stdout;
 use std::rc::Rc;
 
+use crate::clipboards::AppendedCBEntry;
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -311,6 +312,7 @@ pub struct TermionScreenFirstPage {
  regex_edit_mode_state: String,
  regex_edit_mode_last_working: Option<Regex>,
  regex: Vec<Regex>,
+ regex_filtered_cbs_entries: VecDeque<AppendedCBEntry>,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -326,6 +328,7 @@ impl TermionScreenFirstPage {
    regex_edit_mode_state: "".to_string(),
    regex_edit_mode_last_working: None,
    regex: vec![],
+   regex_filtered_cbs_entries: VecDeque::new(),
   }
  }
 
@@ -369,12 +372,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .filter(|line| {
       let mut res = true;
       // TODO : regex_edit_mode_last_working
-      if let Some(r) = &self.regex_edit_mode_last_working {
-       if !r.is_match(&line.cbentry.text) {
-        return false;
-       }
-      }
-      for r in &self.regex {
+      let mut r = self.regex.clone();
+      r.extend(self.regex_edit_mode_last_working.iter().cloned());
+      for r in r {
        if !r.is_match(&line.cbentry.text) {
         res = false;
         break;
@@ -384,19 +384,24 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      })
      .collect::<VecDeque<_>>();
 
+    self.regex_filtered_cbs_entries = entries
+     .iter()
+     .map(|x| (**x).clone())
+     .collect::<VecDeque<AppendedCBEntry>>();
+
     let mut selected_string = &String::default();
 
-    scroller.set_content_length(Some(entries.len()));
+    scroller.set_content_length(entries.len());
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
-    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height);
+    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
 
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
 
-    for (idx, entry) in entries.range(scroller.get_windowrange()).enumerate() {
+    for (idx, entry) in entries.range(scroller.get_safe_windowrange()).enumerate() {
      let entry = &entry.cbentry;
      let is_cursor = match scroller.get_cursor() {
       None => false,
-      Some(value) => idx as u16 == value,
+      Some(value) => idx == value,
      };
 
      let cursor_star = if is_cursor { ">" } else { " " };
@@ -504,7 +509,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
-      let entries = cbs.get_entries();
+      let entries = &self.regex_filtered_cbs_entries;
       let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
                                                     // entry.toggle_selection(&mut cbs);
       cbs.toggle_selection(entry);
@@ -512,7 +517,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
-      let entries = cbs.get_entries();
+      let entries = &self.regex_filtered_cbs_entries;
       let entry = &entries[cursor];
       return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
        self.config,
@@ -578,16 +583,19 @@ impl TermionScreenPainter for TermionScreenViewPage {
    let mut lines = vec![];
 
    {
-    scroller.set_content_length(Some(string_lines.len()));
+    scroller.set_content_length(string_lines.len());
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
-    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height);
+    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
 
     let numbers_width = (string_lines.len() as f64).log10().ceil() as usize;
 
-    for (idx, entry) in string_lines[scroller.get_windowrange()].iter().enumerate() {
+    for (idx, entry) in string_lines[scroller.get_safe_windowrange()]
+     .iter()
+     .enumerate()
+    {
      let is_cursor = match scroller.get_cursor() {
       None => false,
-      Some(value) => idx as u16 == value,
+      Some(value) => idx == value,
      };
 
      let cursor_star = if is_cursor { ">" } else { " " };
