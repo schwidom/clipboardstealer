@@ -444,6 +444,7 @@ impl<'a> AppStateReceiver<'a> {
    }
    let next_tsp = current_painter.handle_event(&ev, &mut self.data);
    drop(current_painter);
+   let mut ignore_basic_events = false;
    match next_tsp {
     crate::termionscreen::NextTsp::NoNextTsp => {}
     crate::termionscreen::NextTsp::Replace(rc) => {
@@ -461,62 +462,67 @@ impl<'a> AppStateReceiver<'a> {
     crate::termionscreen::NextTsp::PopThis => {
      tsp_stack.pop();
     }
-   }
-   if ev.is_stop_event() {
-    let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
-
-    if !tsp_before.borrow().is_sticky_dialog() {
-     tsp_stack.push(Rc::new(RefCell::new(
-      crate::termionscreen::TermionScreenStatusBarDialogYN::new(
-       self.config,
-       tsp_before,
-       "exit? y/n".to_string(),
-      ),
-     )));
+    crate::termionscreen::NextTsp::IgnoreBasicEvents => {
+     ignore_basic_events = true;
     }
-   } else {
-    match ev {
-     MyEvent::Termion(Event::Key(Key::Char('q'))) => {
-      let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
-      if !tsp_before.borrow().is_sticky_dialog() {
-       if tsp_stack.is_empty() {
-        tsp_stack.push(Rc::new(RefCell::new(
-         crate::termionscreen::TermionScreenStatusBarDialogYN::new(
-          self.config,
-          tsp_before,
-          "exit? y/n".to_string(),
-         ),
-        )));
-       } else {
-        tsp_stack.pop();
+   }
+   if !ignore_basic_events {
+    if ev.is_stop_event() {
+     let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
+
+     if !tsp_before.borrow().is_sticky_dialog() {
+      tsp_stack.push(Rc::new(RefCell::new(
+       crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+        self.config,
+        tsp_before,
+        "exit? y/n".to_string(),
+       ),
+      )));
+     }
+    } else {
+     match ev {
+      MyEvent::Termion(Event::Key(Key::Char('q'))) => {
+       let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
+       if !tsp_before.borrow().is_sticky_dialog() {
+        if tsp_stack.is_empty() {
+         tsp_stack.push(Rc::new(RefCell::new(
+          crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+           self.config,
+           tsp_before,
+           "exit? y/n".to_string(),
+          ),
+         )));
+        } else {
+         tsp_stack.pop();
+        }
        }
       }
-     }
-     // MyEvent::Termion(event) => todo!(),
-     // MyEvent::SignalHook(_) => todo!(),
-     MyEvent::MouseButton1(pressed) => {
-      event_state.mouse_button_1_is_pressed = pressed;
-      event_state.update_clipboard(&mut self.data.cbs);
-     }
-
-     MyEvent::Shift(pressed) => {
-      event_state.shift_is_pressed = pressed;
-      event_state.update_clipboard(&mut self.data.cbs);
-     }
-
-     // MyEvent::CbInserted => todo!(),
-     // MyEvent::Unused => todo!(),
-     MyEvent::CbChanged(cbtype, string) => {
-      event_state.cb_changed = Some((cbtype, string));
-      event_state.update_clipboard(&mut self.data.cbs);
-     }
-
-     MyEvent::Tick => {
-      if let Some(append_ndjson_filename) = &self.config.append_ndjson {
-       self.data.cbs.append_ndjson(append_ndjson_filename);
+      // MyEvent::Termion(event) => todo!(),
+      // MyEvent::SignalHook(_) => todo!(),
+      MyEvent::MouseButton1(pressed) => {
+       event_state.mouse_button_1_is_pressed = pressed;
+       event_state.update_clipboard(&mut self.data.cbs);
       }
+
+      MyEvent::Shift(pressed) => {
+       event_state.shift_is_pressed = pressed;
+       event_state.update_clipboard(&mut self.data.cbs);
+      }
+
+      // MyEvent::CbInserted => todo!(),
+      // MyEvent::Unused => todo!(),
+      MyEvent::CbChanged(cbtype, string) => {
+       event_state.cb_changed = Some((cbtype, string));
+       event_state.update_clipboard(&mut self.data.cbs);
+      }
+
+      MyEvent::Tick => {
+       if let Some(append_ndjson_filename) = &self.config.append_ndjson {
+        self.data.cbs.append_ndjson(append_ndjson_filename);
+       }
+      }
+      _ => {}
      }
-     _ => {}
     }
    }
   }

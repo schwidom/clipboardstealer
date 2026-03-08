@@ -21,7 +21,7 @@ Overview:
   orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
   orientation: Cursor Left, Cursor Right (not implemented yet)
 
-  regex search ... / (not implemented yet)
+  regex search ... / (push), Esc (pop)
 
   (h)elp ... this screen 
   (v)iew ... shows the selected entry

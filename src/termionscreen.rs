@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::cmp::min;
+use std::collections::VecDeque;
 use std::io::Stdout;
 use std::rc::Rc;
 
@@ -31,6 +32,9 @@ use tracing::{event, info, span, trace, Instrument, Level};
 
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk // extends char by width, width_cjk
+
+use regex::Match;
+use regex::Regex;
 
 // TODO : into tools.rs
 fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
@@ -129,6 +133,9 @@ struct TwoScreenDefaultWidget<'a> {
  all_lines2: &'a str,
  wrapped1: bool,
  wrapped2: bool,
+ regex_edit_mode: Option<String>,
+ regex_edit_mode_state: String,
+ regex_count: usize,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -136,7 +143,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  where
   Self: Sized,
  {
-  let title = self.main_title.to_string() + if self.wrapped1 { " (w)" } else { "" };
+  let regex_count_indicator =
+   if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
+  let title =
+   self.main_title.to_string() + if self.wrapped1 { " (w)" } else { "" } + regex_count_indicator;
 
   let block = Block::bordered()
    .title(title)
@@ -195,6 +205,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    paragraph2.render(safe_area2, buf);
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
+  if let Some(regex_edit_mode) = &self.regex_edit_mode {
+   Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state)
+    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+  }
  }
 }
 
@@ -210,6 +224,7 @@ pub enum NextTsp {
  Stack(Rc<RefCell<dyn TermionScreenPainter>>),
  Quit,
  PopThis,
+ IgnoreBasicEvents,
 }
 
 pub trait TermionScreenPainter {
@@ -291,6 +306,11 @@ pub struct TermionScreenFirstPage {
  layout: Layout,
  flipstate: u8,
  wrapped: bool,
+ /// during the edit
+ regex_edit_mode: Option<String>,
+ regex_edit_mode_state: String,
+ regex_edit_mode_last_working: Option<Regex>,
+ regex: Vec<Regex>,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -302,6 +322,10 @@ impl TermionScreenFirstPage {
    layout: Layout::new(),
    flipstate: 1,
    wrapped: false,
+   regex_edit_mode: None,
+   regex_edit_mode_state: "".to_string(),
+   regex_edit_mode_last_working: None,
+   regex: vec![],
   }
  }
 
@@ -338,6 +362,27 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
    {
     let entries = cbs.get_entries();
+
+    // gtewxxi8oh
+    let entries = entries
+     .iter()
+     .filter(|line| {
+      let mut res = true;
+      // TODO : regex_edit_mode_last_working
+      if let Some(r) = &self.regex_edit_mode_last_working {
+       if !r.is_match(&line.cbentry.text) {
+        return false;
+       }
+      }
+      for r in &self.regex {
+       if !r.is_match(&line.cbentry.text) {
+        res = false;
+        break;
+       }
+      }
+      res
+     })
+     .collect::<VecDeque<_>>();
 
     let mut selected_string = &String::default();
 
@@ -392,6 +437,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      all_lines2: &selected_string,
      wrapped1: false,
      wrapped2: self.wrapped,
+     regex_edit_mode: self.regex_edit_mode.clone(),
+     regex_edit_mode_state: self.regex_edit_mode_state.clone(),
+     regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -402,46 +450,87 @@ impl TermionScreenPainter for TermionScreenFirstPage {
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
   let mut cbs = &mut assd.cbs;
 
-  match evt {
-   //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
-   MyEvent::Termion(Event::Key(Key::Char('h'))) => {
-    return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
-     self.config,
-     "help".to_string(),
-     config::USAGE.to_string(),
-    ))));
-   }
-   MyEvent::Termion(Event::Key(Key::Char('f'))) => {
-    self.flipstate_next();
-   }
-   MyEvent::Termion(Event::Key(Key::Char('F'))) => {
-    self.flipstate_prev();
-   }
-   MyEvent::Termion(Event::Key(Key::Char('s'))) => {
-    if let Some(cursor) = self.scroller.get_cursor_in_array() {
-     let entries = cbs.get_entries();
-     let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
-                                                   // entry.toggle_selection(&mut cbs);
-     cbs.toggle_selection(entry);
+  if let Some(mut regex_edit_mode) = self.regex_edit_mode.clone() {
+   let regex = Regex::new(&regex_edit_mode);
+   match regex {
+    Ok(regex) => {
+     self.regex_edit_mode_state = "".to_string();
+     self.regex_edit_mode_last_working = Some(regex);
     }
+    Err(_) => self.regex_edit_mode_state = "  < buggy regex".to_string(),
    }
-   MyEvent::Termion(Event::Key(Key::Char('v'))) => {
-    if let Some(cursor) = self.scroller.get_cursor_in_array() {
-     let entries = cbs.get_entries();
-     let entry = &entries[cursor];
+
+   match evt {
+    MyEvent::Termion(Event::Key(Key::Esc)) => {
+     self.regex_edit_mode = None;
+     self.regex_edit_mode_last_working = None;
+    }
+    MyEvent::Termion(Event::Key(Key::Char('\n'))) => {
+     if let Ok(regex) = Regex::new(&regex_edit_mode) {
+      self.regex_edit_mode = None;
+      self.regex_edit_mode_last_working = None;
+      self.regex.push(regex);
+     }
+    }
+    MyEvent::Termion(Event::Key(Key::Backspace)) => {
+     regex_edit_mode.pop();
+     self.regex_edit_mode.insert(regex_edit_mode);
+    }
+    MyEvent::Termion(Event::Key(Key::Char(char))) => {
+     regex_edit_mode.push(*char);
+     self.regex_edit_mode.insert(regex_edit_mode);
+    }
+    _ => {}
+   }
+   return NextTsp::IgnoreBasicEvents;
+  } else {
+   match evt {
+    MyEvent::Termion(Event::Key(Key::Esc)) => {
+     self.regex.pop();
+    }
+    //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
+    MyEvent::Termion(Event::Key(Key::Char('h'))) => {
      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
       self.config,
-      "view entry".to_string(),
-      entry.cbentry.text.clone(),
+      "help".to_string(),
+      config::USAGE.to_string(),
      ))));
     }
-   }
-   MyEvent::Termion(Event::Key(Key::Char('w'))) => {
-    self.wrapped = !self.wrapped;
-   }
-   _ => {
-    // Pager::handle_event(&mut scroller, &evt);
-    Pager::handle_event(&mut self.scroller, evt);
+    MyEvent::Termion(Event::Key(Key::Char('f'))) => {
+     self.flipstate_next();
+    }
+    MyEvent::Termion(Event::Key(Key::Char('F'))) => {
+     self.flipstate_prev();
+    }
+    MyEvent::Termion(Event::Key(Key::Char('s'))) => {
+     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+      let entries = cbs.get_entries();
+      let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
+                                                    // entry.toggle_selection(&mut cbs);
+      cbs.toggle_selection(entry);
+     }
+    }
+    MyEvent::Termion(Event::Key(Key::Char('v'))) => {
+     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+      let entries = cbs.get_entries();
+      let entry = &entries[cursor];
+      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
+       self.config,
+       "view entry".to_string(),
+       entry.cbentry.text.clone(),
+      ))));
+     }
+    }
+    MyEvent::Termion(Event::Key(Key::Char('w'))) => {
+     self.wrapped = !self.wrapped;
+    }
+    MyEvent::Termion(Event::Key(Key::Char('/'))) => {
+     self.regex_edit_mode = Some("".to_string());
+    }
+    _ => {
+     // Pager::handle_event(&mut scroller, &evt);
+     Pager::handle_event(&mut self.scroller, evt);
+    }
    }
   }
   NextTsp::NoNextTsp
@@ -529,6 +618,9 @@ impl TermionScreenPainter for TermionScreenViewPage {
     all_lines2: "unused",
     wrapped1: self.wrapped,
     wrapped2: false,
+    regex_edit_mode: None,
+    regex_edit_mode_state: "".to_string(),
+    regex_count: 0,
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));

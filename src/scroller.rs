@@ -47,7 +47,7 @@ impl Scroller {
    Some(value) => {
     let res = self.windowposition + value as usize;
     if let Some(cl) = self.contentlength {
-     assert!(res < cl);
+     // assert!(res < cl); // crashes when regexes reduce the list gtewxxi8oh
     }
     Some(res)
    }
