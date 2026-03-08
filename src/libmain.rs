@@ -466,8 +466,8 @@ impl<'a> AppStateReceiver<'a> {
      ignore_basic_events = true;
     }
    }
-   if !ignore_basic_events {
-    if ev.is_stop_event() {
+   if true {
+    if ev.is_stop_event() && !ignore_basic_events {
      let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
 
      if !tsp_before.borrow().is_sticky_dialog() {
@@ -481,7 +481,7 @@ impl<'a> AppStateReceiver<'a> {
      }
     } else {
      match ev {
-      MyEvent::Termion(Event::Key(Key::Char('q'))) => {
+      MyEvent::Termion(Event::Key(Key::Char('q'))) if !ignore_basic_events => {
        let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
        if !tsp_before.borrow().is_sticky_dialog() {
         if tsp_stack.is_empty() {
