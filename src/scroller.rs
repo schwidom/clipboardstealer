@@ -28,8 +28,8 @@ impl Scroller {
   }
  }
 
- fn get_windowstart(&self) -> usize {
-  self.windowposition
+ fn get_safe_windowstart(&self) -> usize {
+  min(self.contentlength, self.windowposition)
  }
 
  pub fn get_windowposition(&self) -> usize {
@@ -41,7 +41,7 @@ impl Scroller {
  }
 
  pub fn get_safe_windowrange(&self) -> Range<usize> {
-  return self.get_windowstart()..self.get_safe_windowend();
+  return self.get_safe_windowstart()..self.get_safe_windowend();
  }
  pub fn get_cursor_in_array(&self) -> Option<usize> {
   match self.cursor {
@@ -221,7 +221,8 @@ impl Scroller {
 
  fn cursorfix(&mut self) {
   if let Some(cursor) = self.cursor {
-   let limit = min(self.windowlength, self.contentlength - self.windowposition);
+   // let limit = min(self.windowlength, self.contentlength - self.windowposition);
+   let limit = min(self.windowlength, self.contentlength.saturating_sub(self.windowposition));
    if cursor >= limit {
     if limit > 0 {
      self.cursor = Some(limit - 1);
@@ -245,27 +246,8 @@ impl Scroller {
 
  // TODO : calculations gtewxxi8oh
  pub fn set_content_length(&mut self, cl: usize) {
-  // if let Some(cl) = contentlength && let Some(cursor) = self.cursor
-  // if let Some(cursor) = self.cursor {
-  //  let max = self.windowposition + cursor as usize;
-  //  if cl > max {
-  //   self.contentlength = max;
-  //  }
-  // } else {
-  //  self.contentlength = 0;
-  // }
   self.contentlength = cl;
   self.cursorfix();
-  // let winend = self.windowposition + self.windowlength;
-  // if cl < winend {
-  // if cl >= self.windowlength {
-  // self.windowposition = cl - self.windowlength;
-  // } else {
-  // self.windowposition = 0;
-  // self.windowlength = cl;
-  // self.cursor = None;
-  // }
-  // }
  }
 
  pub fn get_content_length(&self) -> usize {
@@ -299,7 +281,7 @@ mod tests {
   assert_eq!(s.get_safe_windowend(), 0);
   assert_eq!(s.get_windowlength(), 0);
   assert_eq!(s.get_safe_windowrange(), 0..0);
-  assert_eq!(s.get_windowstart(), 0);
+  assert_eq!(s.get_safe_windowstart(), 0);
 
   s.cursor_increase();
 
@@ -462,9 +444,71 @@ mod tests {
   s.cursor_decrease();
  }
 
- // maxbe later
- // #[test]
+ #[test]
 
+ fn scroller_crash_001() {
+  // see scroller_new_001
+
+  let mut s = Scroller::new();
+  assert_eq!(s.get_content_length(), 0);
+  assert_eq!(s.get_cursor_in_array(), None);
+  assert_eq!(s.get_cursor(), None);
+  assert_eq!(s.get_safe_windowend(), 0);
+  assert_eq!(s.get_windowlength(), 0);
+  assert_eq!(s.get_safe_windowrange(), 0..0);
+  assert_eq!(s.get_safe_windowstart(), 0);
+
+  s.set_windowlength(10);
+  s.set_content_length(15);
+  s.cursor_decrease();
+  s.set_content_length(0);
+ }
+
+ #[test]
+ fn scroller_crash_002() {
+  // see scroller_new_001
+
+  fn test(wl: usize, cl: usize, creases: i64, cl2: usize) {
+   let mut s = Scroller::new();
+   s.set_windowlength(wl);
+   s.set_content_length(cl);
+   if creases < 0 {
+    for _ in 0..-creases {
+     s.cursor_decrease();
+    }
+   }
+   if creases > 0 {
+    for _ in 0..creases {
+     s.cursor_increase();
+    }
+   }
+
+   println!("{:?}", (wl, cl, creases, cl2));
+   println!("{:?}", s.get_safe_windowrange());
+   assert!(s.get_safe_windowstart() <= s.get_safe_windowend());
+   assert!(s.get_safe_windowstart() <= cl);
+   assert!(s.get_safe_windowend() <= cl);
+   s.set_content_length(cl2);
+   println!("{:?}", s.get_safe_windowrange());
+   assert!(s.get_safe_windowstart() <= s.get_safe_windowend());
+   assert!(s.get_safe_windowstart() <= cl2);
+   assert!(s.get_safe_windowend() <= cl2);
+  }
+
+  for wl in 0..=2 {
+   for cl in 0..=2 {
+    for creases in -5..=5 {
+     for cl2 in 0..=2 {
+      test(wl, cl, creases, cl2);
+     }
+    }
+   }
+  }
+  // panic!();
+ }
+
+ // maybe later
+ // #[test]
  // fn scroller_safety_001() {
  //  // see scroller_new_001
 

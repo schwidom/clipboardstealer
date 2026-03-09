@@ -395,11 +395,18 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     let mut selected_string = &String::default();
 
+    if self.config.debug {
+     trace!("scroller.set_content_length(entries.len()) : {}", entries.len());
+    }
     scroller.set_content_length(entries.len());
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
     scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
 
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
+
+    if self.config.debug {
+     trace!("scroller.get_safe_windowrange() : {:?}", scroller.get_safe_windowrange());
+    }
 
     for (idx, entry) in entries.range(scroller.get_safe_windowrange()).enumerate() {
      let entry = &entry.cbentry;
@@ -538,14 +545,13 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       {
        // WEITERBEI
        //TODO : funktioniert noch nicht richtig, ich brauche vermutlich ein extra ScreenPainter dafür
-       // oder ich reiche alle Variablen in die config rein, 
+       // oder ich reiche alle Variablen in die config rein,
        // aber das Problem ist, dass ich die Events erstmal anhalten muss.
        // und das geht nur mit dem Rückgabewert, der den Screenpainter zurückliefert
        // also müsste die paint routine des vim Screenpainters auf den vim verzweigen
        // aber vorher den raw modus deaktivieren
        // dieser ScreenPainter wäre dann auch sticky
 
-       
        let tmpfile = Temp::new_file().unwrap();
        let mut fs = File::create(&tmpfile).unwrap();
        fs.write(entry.cbentry.text.as_bytes());
