@@ -4,10 +4,7 @@
 use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::VecDeque;
-use std::fs::{self, File};
-use std::io::{stdout, Stdout, Write};
-use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::io::Stdout;
 use std::rc::Rc;
 
 use crate::clipboards::AppendedCBEntry;
@@ -22,7 +19,6 @@ use crate::pager::Pager;
 use crate::scroller::Scroller;
 use crate::tools::tabfix;
 
-use mktemp::Temp;
 use ratatui::layout::{Alignment, Margin, Position, Rect};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
@@ -535,43 +531,6 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        "view entry".to_string(),
        entry.cbentry.text.clone(),
       ))));
-     }
-    }
-    MyEvent::Termion(Event::Key(Key::Char('e'))) => {
-     if let Some(cursor) = self.scroller.get_cursor_in_array() {
-      let entries = &self.regex_filtered_cbs_entries;
-      let entry = &entries[cursor];
-
-      {
-       // WEITERBEI
-       //TODO : funktioniert noch nicht richtig, ich brauche vermutlich ein extra ScreenPainter dafür
-       // oder ich reiche alle Variablen in die config rein,
-       // aber das Problem ist, dass ich die Events erstmal anhalten muss.
-       // und das geht nur mit dem Rückgabewert, der den Screenpainter zurückliefert
-       // also müsste die paint routine des vim Screenpainters auf den vim verzweigen
-       // aber vorher den raw modus deaktivieren
-       // dieser ScreenPainter wäre dann auch sticky
-
-       let tmpfile = Temp::new_file().unwrap();
-       let mut fs = File::create(&tmpfile).unwrap();
-       fs.write(entry.cbentry.text.as_bytes());
-       let std_out = stdout();
-
-       use termion::raw::IntoRawMode;
-       use termion::raw::RawTerminal;
-
-       let stdout_raw = std_out.into_raw_mode().unwrap();
-       stdout_raw.suspend_raw_mode().unwrap();
-       edit::edit(tmpfile.as_os_str().as_bytes());
-       let std_out = stdout();
-       std_out.into_raw_mode().unwrap();
-      }
-
-      // return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
-      //  self.config,
-      //  "view entry".to_string(),
-      //  entry.cbentry.text.clone(),
-      // ))));
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
