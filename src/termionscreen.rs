@@ -543,6 +543,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        // und das geht nur mit dem Rückgabewert, der den Screenpainter zurückliefert
        // also müsste die paint routine des vim Screenpainters auf den vim verzweigen
        // aber vorher den raw modus deaktivieren
+       // dieser ScreenPainter wäre dann auch sticky
 
        
        let tmpfile = Temp::new_file().unwrap();

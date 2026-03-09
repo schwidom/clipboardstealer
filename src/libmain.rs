@@ -50,7 +50,7 @@ use std::{
 };
 
 use crate::{
- clipboards::*,
+ clipboards::*, // CBEntry
  config::{sleep_default, Config},
  debug::*,
  event::MyEvent,
@@ -354,10 +354,12 @@ impl AppStateReceiverData {
    // let fs = OpenOptions::new().read(true).open(p_load_ndjson).unwrap();
    let content = read_to_string(p_load_ndjson).unwrap();
    let mut deserializer = serde_json::Deserializer::from_str(&content);
-   let svec = deserializer
+   let mut svec: Vec<CBEntry> = deserializer
     .into_iter::<CBEntry>()
     .map(|x| x.unwrap())
     .collect::<Vec<_>>();
+
+   svec.reverse();
 
    for cbentry in svec {
     cbs.cbentries.push_back(AppendedCBEntry {
