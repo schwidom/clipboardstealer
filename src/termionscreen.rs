@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use std::rc::Rc;
 
-use crate::clipboards::AppendedCBEntry;
+use crate::clipboards::{AppendedCBEntry, CBEntry};
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -145,6 +145,8 @@ struct TwoScreenDefaultWidget<'a> {
  regex_edit_mode: Option<String>,
  regex_edit_mode_state: String,
  regex_count: usize,
+ line_count: usize,
+ line_count2: Option<usize>,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -154,8 +156,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  {
   let regex_count_indicator =
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
-  let title =
-   self.main_title.to_string() + if self.wrapped1 { " (w)" } else { "" } + regex_count_indicator;
+  let title = self.main_title.to_string()
+   + if self.wrapped1 { " (w)" } else { "" }
+   + regex_count_indicator
+   + &format!(" l({})", self.line_count);
 
   let block = Block::bordered()
    .title(title)
@@ -187,7 +191,13 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   paragraph.render(safe_area, buf);
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
-   let title2 = self.second_title.to_string() + if self.wrapped2 { " (w)" } else { "" };
+   let title2 = self.second_title.to_string()
+    + if self.wrapped2 { " (w)" } else { "" }
+    // + self.line_count2.map_or_else("", |x| &format!(" l({})", self.line_count2));
+    + &self.line_count2.map_or("".to_string(), |x| format!(" l({})", x));
+
+   // &format!(" l({})", self.line_count2);
+
    let block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
@@ -420,6 +430,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .collect::<VecDeque<AppendedCBEntry>>();
 
     let mut selected_string = &String::default();
+    let mut line_count2 = None;
 
     if self.config.debug {
      trace!("scroller.set_content_length(entries.len()) : {}", entries.len());
@@ -435,7 +446,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
 
     for (idx, entry) in entries.range(scroller.get_safe_windowrange()).enumerate() {
-     let entry = &entry.cbentry;
+     let cbentry = &entry.cbentry;
      let is_cursor = match scroller.get_cursor() {
       None => false,
       Some(value) => idx == value,
@@ -444,12 +455,13 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      let cursor_star = if is_cursor { ">" } else { " " };
 
      // let is_selected = entry.is_selected(cbs);
-     let is_selected = cbs.is_fixated(entry);
+     let is_selected = cbs.is_fixated(cbentry);
 
      let selection_star = if is_selected { "*" } else { " " };
 
      if is_cursor {
-      selected_string = &entry.text;
+      selected_string = &cbentry.text;
+      line_count2.insert(entry.line_count);
      }
 
      {
@@ -458,9 +470,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        cursor_star,
        selection_star,
        idx + scroller.get_windowposition(), // mqbojcmkot
-       entry.cbtype.get_info(),
-       entry.get_date_time(),
-       entry.text,
+       cbentry.cbtype.get_info(),
+       cbentry.get_date_time(),
+       cbentry.text,
        width = numbers_width,
       );
       lines.push(layout.fixline(&s002));
@@ -482,6 +494,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
      regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
+     line_count: entries.len(),
+     // line_count2: selected_string.lines().count(),
+     line_count2,
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -593,7 +608,6 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
 pub struct TermionScreenEditorPage {
  config: &'static Config,
- text: String,
  tmpfile: Temp,
  tmpfile_path: PathBuf,
  edited: bool,
@@ -609,7 +623,6 @@ impl TermionScreenEditorPage {
 
   Self {
    config,
-   text,
    tmpfile,
    tmpfile_path,
    edited: false,
@@ -635,13 +648,17 @@ impl TermionScreenPainter for TermionScreenEditorPage {
    // restore_raw_mode();
 
    if let Ok(new_text) = fs::read_to_string(&self.tmpfile_path) {
-    self.text = new_text.clone();
     let idx = self.index;
 
     if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
-     let mut cbentry = (*entry.cbentry).clone();
-     cbentry.text = new_text;
-     entry.cbentry = Rc::new(cbentry);
+     // let mut cbentry = (*entry.cbentry).clone();
+     // entry.cbentry = Rc::new(cbentry);
+     entry.line_count = new_text.lines().count();
+     // entry.cbentry).text = new_text.clone();
+     entry.cbentry = Rc::new(CBEntry {
+      text: new_text.clone(),
+      ..(*entry.cbentry).clone()
+     });
     }
    }
   }
@@ -698,7 +715,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
   let scroller = &mut self.scroller;
   let layout = &mut self.layout;
 
-  let string_lines = self.text.split("\n").collect::<Vec<_>>();
+  let string_lines = self.text.lines().collect::<Vec<_>>();
 
   let mut rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
 
@@ -755,6 +772,8 @@ impl TermionScreenPainter for TermionScreenViewPage {
     regex_edit_mode: None,
     regex_edit_mode_state: "".to_string(),
     regex_count: 0,
+    line_count: string_lines.len(),
+    line_count2: None,
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));

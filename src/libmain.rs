@@ -454,6 +454,7 @@ impl AppStateReceiverData {
     cbs.cbentries.push_back(AppendedCBEntry {
      // TODO : put this part in Clipboards
      appended: true,
+     line_count: cbentry.text.lines().count(),
      cbentry: Rc::new(cbentry),
     });
    }

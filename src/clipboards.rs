@@ -193,6 +193,7 @@ impl ClipboardFixation {
 #[derive(Clone)]
 pub struct AppendedCBEntry {
  pub appended: bool,
+ pub line_count: usize,
  pub cbentry: Rc<CBEntry>,
 }
 
@@ -267,6 +268,7 @@ impl Clipboards {
     }
     self.cbentries.push_front(AppendedCBEntry {
      appended: false,
+     line_count: s.lines().count(),
      cbentry: Rc::new(CBEntry {
       cbtype: cbtype.clone(),
       timestamp: now,
