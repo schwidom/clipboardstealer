@@ -148,7 +148,7 @@ impl ClipboardReaderWriter {
  }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CBEntry {
  // see old Entry from entries.rs
  pub cbtype: CBType,

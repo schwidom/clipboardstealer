@@ -1,9 +1,20 @@
-use std::{thread, time::Duration};
+use lazy_static::lazy_static;
+use std::{
+ sync::{
+  atomic::{AtomicBool, Ordering},
+  RwLock, RwLockWriteGuard,
+ },
+ thread,
+ time::Duration,
+};
+use version::version;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(30);
 
-// TODO : to constants
-pub const USAGE: &str = r"
+lazy_static! {
+ pub static ref USAGE: String = format!(
+  r"
+clipboardstealer version {}
 
 clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...]
 
@@ -29,10 +40,11 @@ Keys:
  orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
  orientation: Cursor Left, Cursor Right (not implemented yet)
 
- regex search ... / (push), Esc (pop)
+ / (push), Esc (pop) ... stacked regex search
 
  (h)elp ... this screen 
  (v)iew ... shows the selected entry
+ (e)dit ... edit the selected entry
  (s)elect ... selects the chosen entry and 
               enforces it for the specific 
               primary, secondary or clipboard clipboards
@@ -43,20 +55,32 @@ Keys:
  e(x)it ... exits the program
  Ctrl-C ... exits the program
 
+URLs : 
+https://crates.io/crates/clipboardstealer
+https://github.com/schwidom/clipboardstealer
+
 Copyright : Frank Schwidom 2025 - 2026
-This software is licensed under the terms of the Apache-2.0 license. ";
+This software is licensed under the terms of the Apache-2.0 license.
+
+",
+  version!()
+ );
+}
 
 pub fn sleep_default() {
  // dbaphuses4, a0vbfusiba
  thread::sleep(DEFAULT_TIMEOUT);
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
+#[derive(Debug)]
 pub struct Config {
  pub debug: bool,
  pub debugfile: Option<String>,
  pub append_ndjson: Option<String>,
  pub load_ndjson: Vec<String>,
+ pub suspend_threads: RwLock<()>,
+ pub suspended_threads: AtomicBool,
 }
 
 use crate::libmain::Args;
@@ -88,6 +112,20 @@ impl Config {
    debugfile: args.debugfile.clone(),
    append_ndjson: args.append_ndjson.clone(),
    load_ndjson: args.load_ndjson.clone(),
+   suspend_threads: RwLock::new(()),
+   suspended_threads: AtomicBool::new(false),
   }
+ }
+
+ pub(crate) fn wait_for_external_program(&self) {
+  self.suspended_threads.store(true, Ordering::Relaxed);
+  let _x = self.suspend_threads.read().unwrap();
+  self.suspended_threads.store(false, Ordering::Relaxed);
+ }
+ pub(crate) fn block_threads_for_external_program(&self) -> RwLockWriteGuard<'_, ()> {
+  self.suspend_threads.write().unwrap()
+ }
+ pub(crate) fn is_blocked_for_external_program(&self) -> bool {
+  self.suspended_threads.load(Ordering::Relaxed)
  }
 }

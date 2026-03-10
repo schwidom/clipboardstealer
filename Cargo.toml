@@ -1,6 +1,6 @@
 [package]
 name = "clipboardstealer"
-version = "3.1.10"
+version = "3.1.11"
 edition = "2021"
 authors = ["Frank Schwidom"]
 description = "X11 clipboard manager which enforces the user choice"
@@ -37,6 +37,11 @@ vim-line = "4"
 enum-iterator = "2.3.0"
 x11rb-protocol = "0.13"
 lazy_static = "1.5.0"
+mktemp = "0.5.1"
+edit = "0.1.5"
+version = "3.0.0"
+rustix = "1.1.4"
+libc = "0.2.183"
 
 # The profile that 'dist' will build with
 [profile.dist]

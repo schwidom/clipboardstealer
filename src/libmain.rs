@@ -6,8 +6,9 @@ extern crate clap;
 extern crate termion;
 extern crate x11_clipboard;
 
-use ratatui::{self, DefaultTerminal};
+use ratatui::{self, DefaultTerminal, Terminal};
 
+use rustix::termios::{tcflush, QueueSelector};
 use termion::{
  clear::All,
  cursor::{Hide, Show},
@@ -21,6 +22,7 @@ use termion::{
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
+use tracing_subscriber::util::SubscriberInitExt;
 use x11rb_protocol::protocol::{
  shape::Op,
  xproto::{AtomEnum, OpenFontRequest},
@@ -38,7 +40,10 @@ use std::{
  os::{fd::AsFd, unix::fs::OpenOptionsExt},
  path::Path,
  rc::Rc,
- sync::mpsc::{self, Receiver, Sender},
+ sync::{
+  mpsc::{self, Receiver, Sender},
+  RwLockWriteGuard,
+ },
  thread::JoinHandle,
  time::Duration,
 };
@@ -69,6 +74,36 @@ use std::sync::atomic::Ordering;
 
 use crate::clipboards::CBType;
 use enum_iterator::all;
+
+/// Drain any pending input from stdin to clear escape sequences from external editors
+// fn drain_stdin() { // works randomly
+//  use std::os::unix::io::AsRawFd;
+//  use std::os::unix::io::RawFd;
+
+//  let stdin_fd: RawFd = stdin().as_raw_fd();
+//  let flags;
+//  let nonblocking_flags;
+//  unsafe {
+//   flags = libc::fcntl(stdin_fd, libc::F_GETFL);
+//   nonblocking_flags = flags | libc::O_NONBLOCK;
+//   libc::fcntl(stdin_fd, libc::F_SETFL, nonblocking_flags);
+//  }
+
+//  let mut buf = [0u8; 256];
+//  loop {
+//   let n;
+//   unsafe {
+//    n = libc::read(stdin_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
+//   }
+//   if n <= 0 {
+//    break;
+//   }
+//  }
+
+//  unsafe {
+//   libc::fcntl(stdin_fd, libc::F_SETFL, flags);
+//  }
+// }
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -111,6 +146,7 @@ impl TicksThread {
  fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
    loop {
+    ass.config.wait_for_external_program();
     if !ass.is_running() {
      break Ok(());
     }
@@ -144,6 +180,7 @@ impl ClipboardThread {
    let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
 
    loop {
+    ass.config.wait_for_external_program();
     if !ass.is_running() {
      break Ok(());
     }
@@ -170,56 +207,101 @@ impl ClipboardThread {
 
 /// blocking
 struct TermionLoop {
- stdout_raw: RawTerminal<Stdout>,
+ // stdout_raw: Option<RawTerminal<Stdout>>,
+ terminal: Option<DefaultTerminal>, // DefaultTerminal = Terminal<CrosstermBackend<Stdout>>
 }
 
 impl TermionLoop {
- fn new() -> Self {
-  // let x = termion::get_tty().unwrap(); // File
-  // x.into_resettable().
-  // println!("{}", All);
-  // stdin().into_resettable().init();
-
-  // restores terminal state after a zsh exit
+ fn create_raw_mode(&mut self) {
+  // // restores terminal state after a zsh exit
   let magic = "\x1b[?1l\x1b>"; // DECCKM off (normal arrows) + DECKPNM (normal keypad)
   println!("{}", magic);
-  let stdout_raw = stdout().into_raw_mode();
+  // let stdout_raw = stdout().into_raw_mode();
 
-  match stdout_raw {
-   Ok(stdout_raw) => return Self { stdout_raw },
-   Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
+  // self.stdout_raw.insert(stdout_raw.unwrap());
+  self.terminal.insert(ratatui::init());
+  // self.terminal.as_mut().unwrap().flush();
+ }
+
+ fn new() -> Self {
+  let magic = "\x1b[?1l\x1b>"; // DECCKM off (normal arrows) + DECKPNM (normal keypad)
+  println!("{}", magic);
+  // let stdout_raw = stdout().into_raw_mode();
+
+  // match stdout_raw {
+  //  Ok(stdout_raw) => {
+  //   return Self {
+  //    stdout_raw: Some(stdout_raw),
+  //   }
+  //  }
+  //  Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
+  // }
+  Self {
+   terminal: Some(ratatui::init()),
   }
  }
 
  fn run_loop(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
   let thread = thread::spawn(move || -> Result<(), MyError> {
-   let stdin = stdin();
-   for e in stdin.events() {
-    let u = e.unwrap();
-
-    {
-     if !ass.is_running() {
-      break;
-     }
-     ass.sender.send(MyEvent::Termion(u.clone())).unwrap();
+   loop {
+    if ass.config.is_blocked_for_external_program() {
+     sleep_default();
+     continue;
     }
-    sleep_default(); // cgyeofnrzk
+    // for _ in 0..5 {
+    //  tcflush(stdout().as_fd(), QueueSelector::IOFlush).unwrap();
+    //  thread::sleep(Duration::from_millis(100)); // NOTE: the garbage events come after the sleep, no matter how long
+    //  drain_stdin();
+    // }
+    {
+     let stdin = stdin();
+     let stdin_guard = stdin.lock();
+
+     for e in stdin_guard.events() {
+      let u = e.unwrap();
+      ass.sender.send(MyEvent::Termion(u.clone())).unwrap();
+      // this timeout ensures that we don't block stdin in case it is an external editor
+      if u == Event::Key(Key::Char('e')) {
+       // when the editor is entered
+       thread::sleep(Duration::from_millis(100)); // the most expensive line so far in coding time
+      }
+      if ass.config.is_blocked_for_external_program() {
+       break;
+      }
+      // ass.config.wait_for_external_program(); // poacutopn4
+      if !ass.is_running() {
+       break;
+      }
+      sleep_default(); // cgyeofnrzk
+     }
+    }
+
+    // ass.config.wait_for_external_program(); // poacutopn4
    }
+
    Ok(())
   });
   thread
  }
 
  fn suspend_raw_mode(&mut self) {
-  self.stdout_raw.suspend_raw_mode().unwrap();
+  // self
+  //  .stdout_raw
+  //  .as_mut()
+  //  .unwrap()
+  //  .suspend_raw_mode()
+  //  .unwrap();
+  // self.stdout_raw = None;
+  self.terminal = None;
+  ratatui::restore();
  }
 }
 
-impl Drop for TermionLoop {
- fn drop(&mut self) {
-  self.suspend_raw_mode();
- }
-}
+// impl Drop for TermionLoop {
+//  fn drop(&mut self) {
+//   self.suspend_raw_mode();
+//  }
+// }
 
 /** sends SIGWINCH, SIGINT events to MyEventHandler*/
 struct MySignalsLoop {}
@@ -234,6 +316,7 @@ impl MySignalsLoop {
   let thread = thread::spawn(move || -> Result<(), MyError> {
    for signal in &mut signals {
     {
+     ass.config.wait_for_external_program();
      if !ass.is_running() {
       break;
      }
@@ -281,6 +364,7 @@ impl<'a> MouseThread<'a> {
     // if ss.meh.lock()?.get_stop_threads() {
     //  break;
     // }
+    ass.config.wait_for_external_program();
     if !ass.is_running() {
      break;
     }
@@ -327,13 +411,18 @@ impl<'a> MouseThread<'a> {
 
 #[derive(Debug)]
 struct AppStateSender<'a> {
+ config: &'static Config,
  running: &'a AtomicBool,
  sender: Sender<MyEvent>,
 }
 
 impl<'a> AppStateSender<'a> {
- fn new(running: &'a AtomicBool, sender: Sender<MyEvent>) -> Self {
-  Self { running, sender }
+ fn new(config: &'static Config, running: &'a AtomicBool, sender: Sender<MyEvent>) -> Self {
+  Self {
+   config,
+   running,
+   sender,
+  }
  }
 
  fn is_running(&self) -> bool {
@@ -381,6 +470,7 @@ pub struct AppStateReceiver<'a> {
  receiver: Receiver<MyEvent>,
  config: &'static Config,
  data: AppStateReceiverData,
+ tl: TermionLoop,
 }
 
 impl<'a> AppStateReceiver<'a> {
@@ -390,6 +480,7 @@ impl<'a> AppStateReceiver<'a> {
    receiver,
    config,
    data: AppStateReceiverData::new(config),
+   tl: TermionLoop::new(),
   }
  }
 
@@ -433,11 +524,67 @@ impl<'a> AppStateReceiver<'a> {
   // NOTE: geht nicht in assd (self.data), da vermutlich das terminal gedroppt sein muss am Ende, was aber nicht passiert, wenn es im geleakten 'static appstate ist.
   // Nach Ende der loop hier wird es aber regulär gedroppt
   // Meine Vermutung ist korrekt
-  let mut terminal = ratatui::init();
+  // let mut terminal = ratatui::init();
+  // let terminal = &mut self.data.tl.terminal.as_mut().unwrap();
+
+  let mut is_external_program: Option<RwLockWriteGuard<'_, ()>> = None;
 
   loop {
    let mut current_painter = tsp_stack.last().unwrap_or(&tsp_default).borrow_mut(); // pfna784hof
-   current_painter.paint(&mut terminal, &mut self.data);
+
+   // if current_painter.is_external_program() { panic!();} // kommt
+
+   if current_painter.is_external_program() {
+    // panic!(); // kommt bei edit
+    // poacutopn4
+    is_external_program.insert(self.config.block_threads_for_external_program()); // blocks threads
+    print!("{}", Show); // doesn't get restored by ratatui::restore()
+                        // self.data.tl.suspend_raw_mode();
+                        // stdout().flush().unwrap();
+                        // ratatui::restore();
+    self.tl.suspend_raw_mode();
+   }
+
+   match &mut self.tl.terminal.as_mut() {
+    Some(terminal) => {
+     current_painter.paint(&mut self.tl.terminal.as_mut().unwrap(), &mut self.data);
+    }
+    None => {
+     current_painter.paint_without_terminal(&mut self.data);
+    }
+   }
+
+   if current_painter.is_external_program() {
+    // panic!(); // kommt nach beenden des Editors
+    // poacutopn4
+    drop(current_painter);
+    // terminal = ratatui::init();
+
+    // full reset sequence
+    // print!("{}", termion::cursor::Show);
+    // print!("{}", termion::clear::All);
+    // print!("{}", termion::cursor::Goto(1,1));
+    // print!("{}", termion::style::Reset);
+    // stdout().flush().unwrap();
+
+    self.tl.create_raw_mode();
+    print!("{}", Hide);
+
+    // for _ in 0..5 {
+    //  tcflush(stdout().as_fd(), QueueSelector::IOFlush).unwrap();
+    //  thread::sleep(Duration::from_millis(100)); // NOTE: the garbage events come after the sleep, no matter how long
+    //  drain_stdin();
+    // }
+
+    // continues polling
+    is_external_program = None;
+
+    tsp_stack.pop();
+    continue;
+   }
+
+   // if current_painter.is_sticky_dialog() { panic!();}
+
    print!("{}", Hide);
    so.flush().unwrap();
    let ev = self.receiver.recv().unwrap(); // TODO : match
@@ -547,7 +694,7 @@ impl<'a> AppState<'a> {
   let (sender, receiver) = mpsc::channel();
   let running: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
   Self {
-   ass: AppStateSender::new(running, sender),
+   ass: AppStateSender::new(config, running, sender),
    asr: AppStateReceiver::new(config, running, receiver),
    running,
    config,
@@ -617,8 +764,9 @@ pub fn main() {
   monitor2("tl");
  }
 
- let mut tl = TermionLoop::new();
- let _tljh = tl.run_loop(&appstate.ass);
+ // let mut tl = TermionLoop::new();
+ // let _tljh = tl.run_loop(&appstate.ass);
+ let _tljh = &appstate.asr.tl.run_loop(&appstate.ass);
 
  if config.debug {
   monitor2("ts");
@@ -650,11 +798,14 @@ pub fn main() {
 
  // drop(appstate);
  // thread::sleep(Duration::from_millis(500));
+ // poacutopn4
  print!("{}", Show); // doesn't get restored by ratatui::restore()
- tl.suspend_raw_mode();
- stdout().flush().unwrap();
- ratatui::restore();
- println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
+                     // tl.suspend_raw_mode();
+ &appstate.asr.tl.suspend_raw_mode();
+
+ // stdout().flush().unwrap();
+ // ratatui::restore();
+ // println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that

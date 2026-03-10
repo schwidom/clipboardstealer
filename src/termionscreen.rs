@@ -4,7 +4,12 @@
 use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::VecDeque;
-use std::io::Stdout;
+
+use std::fs::{self, File};
+use std::io::{stdout, Stdout, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
+
 use std::rc::Rc;
 
 use crate::clipboards::AppendedCBEntry;
@@ -15,10 +20,13 @@ use crate::layout::Layout;
 use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLayoutTB};
 // use crate::libmain::SyncStuff;
 use crate::libmain::AppStateReceiverData;
+use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
 use crate::tools::tabfix;
 
+use mktemp::Temp;
+use ratatui::crossterm::terminal;
 use ratatui::layout::{Alignment, Margin, Position, Rect};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
@@ -232,13 +240,35 @@ pub trait TermionScreenPainter {
  // fn new(config: &'static Config) -> Self
  // where
  //  Self: Sized;
+
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData);
+
+ fn paint_without_terminal(&mut self, assd: &mut AppStateReceiverData) {
+  panic!("only used if overridden");
+ }
+
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp;
+
  /// a dialog is sticky if you cannot quit (q) or exit (x) from it
  /// or put another dialog on top of the dialogstack
  ///
  /// it is currently used for the exit dialog
  fn is_sticky_dialog(&self) -> bool {
+  false
+ }
+
+ /// that means: this TermionScreenPainter does not handle events
+ ///
+ /// if the paint method is done the previous screen is visible again
+ ///
+ /// before and after the page the raw mode gets disabled and reenabled again
+ ///
+ /// before and after the page the controlling events gets discarded
+ ///
+ /// events are kept : mouse, shift, clipboards are still getting read out
+ ///
+ ///
+ fn is_external_program(&self) -> bool {
   false
  }
 }
@@ -533,6 +563,18 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       ))));
      }
     }
+    MyEvent::Termion(Event::Key(Key::Char('e'))) => {
+     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+      let entries = &self.regex_filtered_cbs_entries;
+      let entry = &entries[cursor];
+
+      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenEditorPage::new(
+       self.config,
+       entry.cbentry.text.clone(),
+       cursor,
+      ))));
+     }
+    }
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
      self.wrapped = !self.wrapped;
     }
@@ -546,6 +588,83 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    }
   }
   NextTsp::NoNextTsp
+ }
+}
+
+pub struct TermionScreenEditorPage {
+ config: &'static Config,
+ text: String,
+ tmpfile: Temp,
+ tmpfile_path: PathBuf,
+ edited: bool,
+ index: usize,
+}
+
+impl TermionScreenEditorPage {
+ pub fn new(config: &'static Config, text: String, index: usize) -> Self {
+  let tmpfile = Temp::new_file().unwrap();
+  let tmpfile_path = tmpfile.to_path_buf();
+  let mut fs = File::create(&tmpfile).unwrap();
+  fs.write_all(text.as_bytes()).unwrap();
+
+  Self {
+   config,
+   text,
+   tmpfile,
+   tmpfile_path,
+   edited: false,
+   index,
+  }
+ }
+}
+
+impl TermionScreenPainter for TermionScreenEditorPage {
+ fn paint(&mut self, _terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
+  panic!("not used here");
+ }
+
+ fn paint_without_terminal(&mut self, assd: &mut AppStateReceiverData) {
+  if !self.edited {
+   self.edited = true;
+
+   // suspend_raw_mode();
+
+   edit::edit_file(&self.tmpfile_path).ok();
+   // edit::edit_file(&self.tmpfile_path).unwrap();
+   // linuxeditor::edit_file( &self.tmpfile_path);
+   // restore_raw_mode();
+
+   if let Ok(new_text) = fs::read_to_string(&self.tmpfile_path) {
+    self.text = new_text.clone();
+    let idx = self.index;
+
+    if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
+     let mut cbentry = (*entry.cbentry).clone();
+     cbentry.text = new_text;
+     entry.cbentry = Rc::new(cbentry);
+    }
+   }
+  }
+ }
+
+ fn handle_event(&mut self, _evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
+  /*
+  let edited_text = self.text.clone();
+  let idx = self.index;
+
+  if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
+   let mut cbentry = (*entry.cbentry).clone();
+   cbentry.text = edited_text;
+   entry.cbentry = Rc::new(cbentry);
+  }
+  */
+
+  // this Tsp gets automatically removed as soon as
+  NextTsp::NoNextTsp
+ }
+
+ fn is_external_program(&self) -> bool {
+  true
  }
 }
 
