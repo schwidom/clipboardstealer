@@ -29,7 +29,7 @@ Overview:
 
   (s)elect ... selects the chosen entry and 
                enforces it for the specific 
-               primary or secondary clipboard clipboards
+               primary, secondary or clipboard clipboards
   (fF)lip ... the layout
   (w)rap ... wraps the lines
 
