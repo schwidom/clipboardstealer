@@ -147,6 +147,7 @@ struct TwoScreenDefaultWidget<'a> {
  regex_count: usize,
  line_count: usize,
  line_count2: Option<usize>,
+ statusline_vector: Rc<RefCell<Vec<String>>>,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -157,9 +158,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let regex_count_indicator =
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
   let title = self.main_title.to_string()
+   + &format!(" l({})", self.line_count)
    + if self.wrapped1 { " (w)" } else { "" }
-   + regex_count_indicator
-   + &format!(" l({})", self.line_count);
+   + regex_count_indicator;
 
   let block = Block::bordered()
    .title(title)
@@ -192,9 +193,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
    let title2 = self.second_title.to_string()
-    + if self.wrapped2 { " (w)" } else { "" }
-    // + self.line_count2.map_or_else("", |x| &format!(" l({})", self.line_count2));
-    + &self.line_count2.map_or("".to_string(), |x| format!(" l({})", x));
+    + &self
+     .line_count2
+     .map_or("".to_string(), |x| format!(" l({})", x))
+    + if self.wrapped2 { " (w)" } else { "" };
 
    // &format!(" l({})", self.line_count2);
 
@@ -224,8 +226,12 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    paragraph2.render(safe_area2, buf);
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
+  let statusline = self.statusline_vector.borrow();
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state)
+    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+  } else if let Some(status_message) = statusline.first() {
+   Paragraph::new(status_message.clone())
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   }
  }
@@ -347,7 +353,6 @@ pub struct TermionScreenFirstPage {
  layout: Layout,
  flipstate: u8,
  wrapped: bool,
- /// during the edit
  regex_edit_mode: Option<String>,
  regex_edit_mode_state: String,
  regex_edit_mode_last_working: Option<Regex>,
@@ -357,7 +362,7 @@ pub struct TermionScreenFirstPage {
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
 impl TermionScreenFirstPage {
- pub fn new(config: &'static Config) -> Self {
+ pub fn new(config: &'static Config, statusline_vector: Rc<RefCell<Vec<String>>>) -> Self {
   Self {
    config,
    scroller: Scroller::new(),
@@ -497,6 +502,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      line_count: entries.len(),
      // line_count2: selected_string.lines().count(),
      line_count2,
+     statusline_vector: Rc::clone(&assd.statusline_vector),
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -774,6 +780,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     regex_count: 0,
     line_count: string_lines.len(),
     line_count2: None,
+    statusline_vector: Rc::clone(&assd.statusline_vector),
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));

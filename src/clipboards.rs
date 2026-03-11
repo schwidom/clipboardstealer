@@ -24,6 +24,7 @@ use x11::Atom;
 use x11rb_protocol::protocol::xproto::AtomEnum;
 
 use crate::config::sleep_default;
+use crate::libmain::CbsError;
 // use crate::entries::Entries;
 // use crate::entries::Entry;
 // use crate::libmain::MyError;
@@ -93,17 +94,13 @@ pub struct ClipboardReaderWriter {
 }
 
 impl ClipboardReaderWriter {
- pub fn from_atom(atom: Atom) -> Self {
-  let cb = Clipboard::new().unwrap();
-  Self { cb, atom }
- }
 
- pub fn from_cbtype(cbtype: &CBType) -> Self {
-  let cb = Clipboard::new().unwrap();
-  Self {
+ pub(crate) fn from_cbtype(cbtype: &CBType) -> Result<Self, CbsError> {
+  let cb = Clipboard::new()?;
+  Ok(Self {
    cb,
    atom: cbtype.get_atom(),
-  }
+  })
  }
 
  pub fn cbtype(&self) -> CBType {
@@ -163,24 +160,18 @@ impl CBEntry {
   ret[0..19].into() // 2025-02-24 20:25:40
  }
 }
-pub struct ClipboardFixation {
+pub(crate) struct ClipboardFixation {
  pub crw: ClipboardReaderWriter,
  pub fixation: Option<Rc<CBEntry>>,
 }
 
 impl ClipboardFixation {
- fn from_atom(atom: Atom) -> Self {
-  Self {
-   crw: ClipboardReaderWriter::from_atom(atom),
-   fixation: None,
-  }
- }
 
- fn from_cbtype(cbtype: &CBType) -> Self {
-  Self {
-   crw: ClipboardReaderWriter::from_cbtype(cbtype),
+ fn from_cbtype(cbtype: &CBType) -> Result<Self, CbsError> {
+  Ok(Self {
+   crw: ClipboardReaderWriter::from_cbtype(cbtype)?,
    fixation: None,
-  }
+  })
  }
 
  fn restore(&self) {
@@ -208,7 +199,7 @@ pub struct Clipboards {
  // pub fixation: HashMap< String, Option<Rc<CBEntry>>>,
  // pub cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
  // pub cfmap: HashMap<String, ClipboardFixation>,
- pub cfmap: HashMap<CBType, ClipboardFixation>,
+ pub(crate) cfmap: HashMap<CBType, ClipboardFixation>,
 }
 
 pub fn atom_to_string(atom: u32) -> String {
@@ -224,7 +215,10 @@ pub fn atom_to_string(atom: u32) -> String {
 impl Clipboards {
  pub fn new() -> Self {
   let cfmap: HashMap<CBType, ClipboardFixation> = all::<CBType>()
-   .map(|cbtype| (cbtype.clone(), ClipboardFixation::from_cbtype(&cbtype)))
+   .filter_map(|cbtype| match ClipboardFixation::from_cbtype(&cbtype) {
+    Ok(cf) => Some((cbtype.clone(), cf)),
+    Err(_) => None,
+   })
    .collect();
 
   Self {

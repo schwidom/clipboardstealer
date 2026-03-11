@@ -30,11 +30,14 @@ use x11rb_protocol::protocol::{
 // use x11_clipboard::error::Error as X11Error;
 use xcb_1::{
  x::{KeyButMask, QueryPointer},
- Connection,
+ ConnError, Connection,
 };
 
 use std::{
  cell::RefCell,
+ cmp::min,
+ env::var_os,
+ ffi::OsString,
  fs::{read_to_string, OpenOptions},
  io::Write,
  os::{fd::AsFd, unix::fs::OpenOptionsExt},
@@ -55,8 +58,9 @@ use std::{
 };
 
 use crate::{
- clipboards::*, // CBEntry
+ clipboards::*,
  config::{sleep_default, Config},
+ constants::{self, DISPLAY, EDITOR},
  debug::*,
  event::MyEvent,
  termionscreen::{TermionScreenFirstPage, TermionScreenPainter},
@@ -118,10 +122,12 @@ pub struct Args {
  pub(crate) load_ndjson: Vec<String>,
 }
 
-pub enum MyError {
+pub(crate) enum CbsError {
  PoisonError,
  UnitError,
  // X11Clipboard(X11Error),
+ DISPLAY(x11_clipboard::error::Error),
+ ConnError(ConnError),
 }
 
 // impl From<()> for MyError {
@@ -129,6 +135,17 @@ pub enum MyError {
 //   MyError::UnitError
 //  }
 // }
+impl From<x11_clipboard::error::Error> for CbsError {
+ fn from(value: x11_clipboard::error::Error) -> Self {
+  Self::DISPLAY(value)
+ }
+}
+
+impl From<ConnError> for CbsError {
+ fn from(value: ConnError) -> Self {
+  Self::ConnError(value)
+ }
+}
 
 use x11_clipboard as x11;
 // use x11::xcb::Atom;
@@ -143,8 +160,8 @@ impl TicksThread {
   Self {}
  }
 
- fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
-  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
+ fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
+  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
    loop {
     ass.config.wait_for_external_program();
     if !ass.is_running() {
@@ -168,37 +185,41 @@ impl ClipboardThread {
   Self {}
  }
 
- fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
-  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), MyError> {
-   let crws: Vec<_> = all::<CBType>()
+ fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
+  let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
+   let crws: Vec<ClipboardReaderWriter> = all::<CBType>()
     .collect::<Vec<_>>()
     .iter()
-    .map(|x: &CBType| ClipboardReaderWriter::from_cbtype(x))
+    .filter_map(|x: &CBType| ClipboardReaderWriter::from_cbtype(x).ok())
     .collect();
 
-   // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
-   let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
+   if !crws.is_empty() {
+    // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
+    let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
 
-   loop {
-    ass.config.wait_for_external_program();
-    if !ass.is_running() {
-     break Ok(());
-    }
-
-    let cb_strings2: Vec<_> = crws.iter().map(|x| x.read()).collect();
-
-    for i in 0..cb_strings.len() {
-     if cb_strings2[i] != cb_strings[i] {
-      ass
-       .sender
-       .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
-       .unwrap();
+    loop {
+     ass.config.wait_for_external_program();
+     if !ass.is_running() {
+      break Ok(());
      }
+
+     let cb_strings2: Vec<_> = crws.iter().map(|x| x.read()).collect();
+
+     for i in 0..cb_strings.len() {
+      if cb_strings2[i] != cb_strings[i] {
+       ass
+        .sender
+        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
+        .unwrap();
+      }
+     }
+
+     cb_strings = cb_strings2;
+
+     sleep_default(); // cgyeofnrzk
     }
-
-    cb_strings = cb_strings2;
-
-    sleep_default(); // cgyeofnrzk
+   } else {
+    Ok(())
    }
   });
   thread
@@ -241,8 +262,8 @@ impl TermionLoop {
   }
  }
 
- fn run_loop(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
-  let thread = thread::spawn(move || -> Result<(), MyError> {
+ fn run_loop(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
+  let thread = thread::spawn(move || -> Result<(), CbsError> {
    loop {
     if ass.config.is_blocked_for_external_program() {
      sleep_default();
@@ -311,9 +332,9 @@ impl MySignalsLoop {
   Self {}
  }
 
- fn run_thread(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
+ fn run_thread(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
   let mut signals = Signals::new(&[SIGWINCH, SIGINT]).unwrap();
-  let thread = thread::spawn(move || -> Result<(), MyError> {
+  let thread = thread::spawn(move || -> Result<(), CbsError> {
    for signal in &mut signals {
     {
      ass.config.wait_for_external_program();
@@ -339,15 +360,15 @@ impl<'a> MouseThread<'a> {
  fn new(config: &'a Config) -> Self {
   Self { config }
  }
- fn run(&self, ass: &'static AppStateSender) -> JoinHandle<Result<(), MyError>> {
+ fn run(&self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
   let debug = self.config.debug;
-  let thread = thread::spawn(move || -> Result<(), MyError> {
+  let thread = thread::spawn(move || -> Result<(), CbsError> {
    // TODO : clean up the unwrap
-   let displayname: String = std::env::var_os("DISPLAY")
-    .unwrap()
+   let displayname: String = var_os(DISPLAY)
+    .unwrap_or(OsString::from(""))
     .to_string_lossy()
     .into();
-   let (connection, preferred_screen) = Connection::connect(Some(&displayname)).unwrap();
+   let (connection, preferred_screen) = Connection::connect(Some(&displayname))?;
    if debug {
     trace!("MouseThread goes into loop state");
    }
@@ -432,16 +453,25 @@ impl<'a> AppStateSender<'a> {
 
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
- // pub terminal: DefaultTerminal,
+ pub statusline_vector: Rc<RefCell<Vec<String>>>,
 }
 
 impl AppStateReceiverData {
  pub fn new(config: &'static Config) -> Self {
   let mut cbs = Clipboards::new();
+  let mut statusline_vector = Vec::new();
   for load_ndjson in &config.load_ndjson {
    let p_load_ndjson = Path::new(load_ndjson);
-   // let fs = OpenOptions::new().read(true).open(p_load_ndjson).unwrap();
-   let content = read_to_string(p_load_ndjson).unwrap();
+   let content = read_to_string(p_load_ndjson);
+   let content = match content {
+    Ok(content) => content,
+    Err(err) => {
+     let err_msg = format!("file not readable: {:?} - {}", p_load_ndjson, err);
+     eprintln!("{}", err_msg);
+     statusline_vector.push(err_msg);
+     continue;
+    }
+   };
    let mut deserializer = serde_json::Deserializer::from_str(&content);
    let mut svec: Vec<CBEntry> = deserializer
     .into_iter::<CBEntry>()
@@ -452,7 +482,6 @@ impl AppStateReceiverData {
 
    for cbentry in svec {
     cbs.cbentries.push_back(AppendedCBEntry {
-     // TODO : put this part in Clipboards
      appended: true,
      line_count: cbentry.text.lines().count(),
      cbentry: Rc::new(cbentry),
@@ -461,7 +490,7 @@ impl AppStateReceiverData {
   }
   Self {
    cbs,
-   // terminal: ratatui::init(),
+   statusline_vector: Rc::new(RefCell::new(statusline_vector)),
   }
  }
 }
@@ -496,8 +525,9 @@ impl<'a> AppStateReceiver<'a> {
  fn run_loop(&mut self) {
   // self.running.store(true, Ordering::Relaxed);
   assert!(self.is_running());
-  let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> =
-   Rc::new(RefCell::new(TermionScreenFirstPage::new(self.config)));
+  let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> = Rc::new(RefCell::new(
+   TermionScreenFirstPage::new(self.config, Rc::clone(&self.data.statusline_vector)),
+  ));
   let mut tsp_stack: Vec<Rc<RefCell<dyn TermionScreenPainter>>> = vec![];
 
   #[derive(Default)]
@@ -592,8 +622,17 @@ impl<'a> AppStateReceiver<'a> {
    if self.config.debug {
     trace!("ev: {:?}", ev);
    }
+   let is_sticky = current_painter.is_sticky_dialog();
    let next_tsp = current_painter.handle_event(&ev, &mut self.data);
    drop(current_painter);
+   if let MyEvent::Termion(Event::Key(Key::Esc)) = ev {
+    if !is_sticky && !matches!(next_tsp, crate::termionscreen::NextTsp::IgnoreBasicEvents) {
+     let mut statusline = self.data.statusline_vector.borrow_mut();
+     if !statusline.is_empty() {
+      statusline.remove(0);
+     }
+    }
+   }
    let mut ignore_basic_events = false;
    match next_tsp {
     crate::termionscreen::NextTsp::NoNextTsp => {}
@@ -705,6 +744,46 @@ impl<'a> AppState<'a> {
 
 pub fn main() {
  let args = Args::parse();
+
+ {
+  // aborts
+  let mut exit = false;
+
+  if false {
+   // TODO : better usability checks for DISPLAY
+   if var_os(DISPLAY).is_none() || var_os(DISPLAY) == Some("".into()) {
+    // eprintln!("Environment variable DISPLAY is not set, program may misbehave");
+    // thread::sleep(Duration::from_millis(500));
+    eprintln!("Environment variable DISPLAY is not set");
+    exit = true;
+   }
+  }
+
+  if exit {
+   eprintln!("exiting");
+   return;
+  }
+ }
+
+ {
+  // warnings
+
+  let mut delay: u64 = 0;
+
+  // TODO : better usability checks for DISPLAY
+  if var_os(DISPLAY).is_none() || var_os(DISPLAY) == Some("".into()) {
+   eprintln!("Environment variable DISPLAY is not set, program may misbehave");
+   delay += 1;
+  }
+  // TODO : reactivate linuxeditor first, then editor
+  if var_os(EDITOR).is_none() || var_os(EDITOR) == Some("".into()) {
+   eprintln!("Environment variable EDITOR not set, editor may not be available");
+   delay += 1;
+  }
+  if delay > 0 {
+   thread::sleep(Duration::from_millis(min(5000, 1000 * delay)));
+  }
+ }
 
  let config = Box::leak(Box::new(Config::from_args(&args)));
 

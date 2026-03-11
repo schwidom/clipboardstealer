@@ -9,7 +9,7 @@ use std::{
  sync::mpsc::{self, Receiver, Sender},
 };
 
-use crate::{clipboards::CBType, libmain::MyError};
+use crate::{clipboards::CBType, libmain::CbsError};
 use x11_clipboard as x11;
 // use x11::xcb::Atom;
 use x11::Atom;
