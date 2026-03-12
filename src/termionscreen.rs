@@ -228,10 +228,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
   let statusline = self.statusline_heap.borrow();
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
-   Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state)
+   Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   } else if let Some(status_msg) = statusline.peek() {
-   Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()))
+   Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()) + " (Esc)")
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   }
  }
