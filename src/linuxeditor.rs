@@ -24,7 +24,6 @@ pub(crate) fn edit_file(pb: &PathBuf) -> Result<(), Box<dyn Error>> {
 
  match editor {
   None => {
-   panic!();
    return Err(Box::from("no editor found"));
   }
 

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -60,7 +61,7 @@ impl CBType {
   } else if atom == c {
    Self::Clipboard
   } else {
-   panic!()
+   unreachable!("Unknown clipboard atom received");
   }
  }
 
@@ -94,7 +95,6 @@ pub struct ClipboardReaderWriter {
 }
 
 impl ClipboardReaderWriter {
-
  pub(crate) fn from_cbtype(cbtype: &CBType) -> Result<Self, CbsError> {
   let cb = Clipboard::new()?;
   Ok(Self {
@@ -166,7 +166,6 @@ pub(crate) struct ClipboardFixation {
 }
 
 impl ClipboardFixation {
-
  fn from_cbtype(cbtype: &CBType) -> Result<Self, CbsError> {
   Ok(Self {
    crw: ClipboardReaderWriter::from_cbtype(cbtype)?,
@@ -200,16 +199,8 @@ pub struct Clipboards {
  // pub cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
  // pub cfmap: HashMap<String, ClipboardFixation>,
  pub(crate) cfmap: HashMap<CBType, ClipboardFixation>,
-}
-
-pub fn atom_to_string(atom: u32) -> String {
- match atom {
-  x if x == CB_ATOMS.primary => "p",
-  2 => "s",
-  x if x == CB_ATOMS.clipboard => "c",
-  _ => panic!(""),
- }
- .to_string()
+ append_file: Option<File>,
+ append_file_error_reported: bool,
 }
 
 impl Clipboards {
@@ -224,6 +215,8 @@ impl Clipboards {
   Self {
    cbentries: VecDeque::new(),
    cfmap,
+   append_file: None,
+   append_file_error_reported: false,
   }
  }
 
@@ -277,28 +270,45 @@ impl Clipboards {
   &self.cbentries
  }
 
- pub(crate) fn append_ndjson(&mut self, append_ndjson_filename: &str) {
-  // panic!("append_ndjson_filename {}", append_ndjson_filename);
-  let mut fd = OpenOptions::new()
-   .create(true)
-   .append(true)
-   .open(Path::new(append_ndjson_filename))
-   .unwrap();
-
-  let now = MyTime::now();
-
-  for cbentry in &mut self.cbentries {
-   if cbentry.appended {
-    break;
-   } else {
-    // Serialize
-    let span = now.timestamp - cbentry.cbentry.timestamp.timestamp;
-    if span > TimeDelta::milliseconds(300) {
-     write!(fd, "{}\n", serde_json::to_string(&*cbentry.cbentry).unwrap()).unwrap();
-     cbentry.appended = true;
+ pub(crate) fn append_ndjson(&mut self, append_ndjson_filename: &str) -> Result<(), String> {
+  if self.append_file.is_none() && !self.append_file_error_reported {
+   match OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(Path::new(append_ndjson_filename))
+   {
+    Ok(file) => {
+     self.append_file = Some(file);
+    }
+    Err(e) => {
+     self.append_file_error_reported = true;
+     return Err(format!("Failed to open append file: {}", e));
     }
    }
   }
+
+  if self.append_file_error_reported {
+   return Ok(());
+  }
+
+  let now = MyTime::now();
+
+  Ok(if let Some(ref mut fd) = self.append_file {
+   for cbentry in &mut self.cbentries {
+    if cbentry.appended {
+     break;
+    } else {
+     let span = now.timestamp - cbentry.cbentry.timestamp.timestamp;
+     if span > TimeDelta::milliseconds(300) {
+      let json_str = serde_json::to_string(&*cbentry.cbentry)
+       .map_err(|e| format!("Serialization error: {}", e))?;
+      write!(fd, "{}\n", json_str).map_err(|e| format!("Write error: {}", e))?;
+      cbentry.appended = true;
+     }
+    }
+   }
+   fd.flush().map_err(|e| format!("flush : {}", e))?
+  })
  }
 
  pub fn is_fixated(&self, cbentry: &Rc<CBEntry>) -> bool {
@@ -332,7 +342,13 @@ impl Clipboards {
  // }
 
  pub(crate) fn toggle_selection(&mut self, cbentry: &Rc<CBEntry>) {
-  let cf = &mut self.cfmap.get_mut(&cbentry.cbtype).unwrap();
+  let cf = match self.cfmap.get_mut(&cbentry.cbtype) {
+   Some(cf) => cf,
+   None => {
+    trace!("toggle_selection: cbtype not found in cfmap");
+    return;
+   }
+  };
 
   trace!("toggle_selection");
 

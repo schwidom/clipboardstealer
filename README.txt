@@ -8,6 +8,7 @@ Overview:
  - works also with xwayland (tested on debian 13)
  - allows selection of all three of them
  - enforces the user choice (on shortcut s)
+ - allows editing of entries
 
  Installation:
 

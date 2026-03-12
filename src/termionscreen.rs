@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 use std::cmp::min;
-use std::collections::VecDeque;
+use std::collections::{BinaryHeap, VecDeque};
 
 use std::fs::{self, File};
 use std::io::{stdout, Stdout, Write};
@@ -19,7 +19,7 @@ use crate::event::MyEvent;
 use crate::layout::Layout;
 use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLayoutTB};
 // use crate::libmain::SyncStuff;
-use crate::libmain::AppStateReceiverData;
+use crate::libmain::{AppStateReceiverData, StatusMessage};
 use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
@@ -147,7 +147,7 @@ struct TwoScreenDefaultWidget<'a> {
  regex_count: usize,
  line_count: usize,
  line_count2: Option<usize>,
- statusline_vector: Rc<RefCell<Vec<String>>>,
+ statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -226,12 +226,12 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    paragraph2.render(safe_area2, buf);
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
-  let statusline = self.statusline_vector.borrow();
+  let statusline = self.statusline_heap.borrow();
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state)
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
-  } else if let Some(status_message) = statusline.first() {
-   Paragraph::new(status_message.clone())
+  } else if let Some(status_msg) = statusline.peek() {
+   Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()))
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   }
  }
@@ -259,8 +259,8 @@ pub trait TermionScreenPainter {
 
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData);
 
- fn paint_without_terminal(&mut self, assd: &mut AppStateReceiverData) {
-  panic!("only used if overridden");
+ fn paint_without_terminal(&mut self, _assd: &mut AppStateReceiverData) {
+  unreachable!("paint_without_terminal() must be implemented");
  }
 
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp;
@@ -358,11 +358,15 @@ pub struct TermionScreenFirstPage {
  regex_edit_mode_last_working: Option<Regex>,
  regex: Vec<Regex>,
  regex_filtered_cbs_entries: VecDeque<AppendedCBEntry>,
+ statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
 impl TermionScreenFirstPage {
- pub fn new(config: &'static Config, statusline_vector: Rc<RefCell<Vec<String>>>) -> Self {
+ pub fn new(
+  config: &'static Config,
+  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ ) -> Self {
   Self {
    config,
    scroller: Scroller::new(),
@@ -374,6 +378,7 @@ impl TermionScreenFirstPage {
    regex_edit_mode_last_working: None,
    regex: vec![],
    regex_filtered_cbs_entries: VecDeque::new(),
+   statusline_heap,
   }
  }
 
@@ -403,7 +408,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
   };
 
   {
-   let (width, height) = termion::terminal_size().unwrap();
+   let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
    layout.set_width_height(width, height);
 
    let mut lines = vec![];
@@ -502,7 +507,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      line_count: entries.len(),
      // line_count2: selected_string.lines().count(),
      line_count2,
-     statusline_vector: Rc::clone(&assd.statusline_vector),
+     statusline_heap: Rc::clone(&assd.statusline_heap),
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -589,11 +594,23 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       let entry = &entries[cursor];
 
-      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenEditorPage::new(
-       self.config,
-       entry.cbentry.text.clone(),
-       cursor,
-      ))));
+      match TermionScreenEditorPage::new(self.config, entry.cbentry.text.clone(), cursor) {
+       Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
+       Err(e) => {
+        eprintln!("Failed to create editor page: {}", e);
+        match assd.statusline_heap.try_borrow_mut() {
+         Ok(mut v) => v.push(StatusMessage {
+          severity: crate::libmain::StatusSeverity::Warning,
+          text: format!("Failed to create editor page: {}", e),
+         }),
+         Err(err) => {
+          trace!("Failed to create editor page: {}", e);
+          trace!("Failed to open statusline heap: ");
+         }
+        }
+        return NextTsp::NoNextTsp;
+       }
+      }
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
@@ -621,25 +638,27 @@ pub struct TermionScreenEditorPage {
 }
 
 impl TermionScreenEditorPage {
- pub fn new(config: &'static Config, text: String, index: usize) -> Self {
-  let tmpfile = Temp::new_file().unwrap();
+ pub fn new(config: &'static Config, text: String, index: usize) -> Result<Self, String> {
+  let tmpfile = Temp::new_file().map_err(|e| format!("Failed to create temp file: {}", e))?;
   let tmpfile_path = tmpfile.to_path_buf();
-  let mut fs = File::create(&tmpfile).unwrap();
-  fs.write_all(text.as_bytes()).unwrap();
+  let mut fs = File::create(&tmpfile).map_err(|e| format!("Failed to create temp file: {}", e))?;
+  fs
+   .write_all(text.as_bytes())
+   .map_err(|e| format!("Failed to write to temp file: {}", e))?;
 
-  Self {
+  Ok(Self {
    config,
    tmpfile,
    tmpfile_path,
    edited: false,
    index,
-  }
+  })
  }
 }
 
 impl TermionScreenPainter for TermionScreenEditorPage {
- fn paint(&mut self, _terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
-  panic!("not used here");
+ fn paint(&mut self, _terminal: &mut DefaultTerminal, _assd: &mut AppStateReceiverData) {
+  unreachable!("paint() is not used in editor page - use paint_without_terminal()");
  }
 
  fn paint_without_terminal(&mut self, assd: &mut AppStateReceiverData) {
@@ -726,7 +745,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
   let mut rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
 
   {
-   let (width, height) = termion::terminal_size().unwrap();
+   let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
    layout.set_width_height(width, height);
 
    let mut lines = vec![];
@@ -770,17 +789,16 @@ impl TermionScreenPainter for TermionScreenViewPage {
     main_title: &self.main_title,
     second_title: "unused",
     rv: &rv,
-    // tsfp: &self,
     all_lines: &all_lines,
-    all_lines2: "unused",
-    wrapped1: self.wrapped,
+    all_lines2: "",
+    wrapped1: false,
     wrapped2: false,
     regex_edit_mode: None,
     regex_edit_mode_state: "".to_string(),
     regex_count: 0,
     line_count: string_lines.len(),
     line_count2: None,
-    statusline_vector: Rc::clone(&assd.statusline_vector),
+    statusline_heap: Rc::clone(&assd.statusline_heap),
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));

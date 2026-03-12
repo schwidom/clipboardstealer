@@ -36,6 +36,7 @@ use xcb_1::{
 use std::{
  cell::RefCell,
  cmp::min,
+ collections::BinaryHeap,
  env::var_os,
  ffi::OsString,
  fs::{read_to_string, OpenOptions},
@@ -451,15 +452,40 @@ impl<'a> AppStateSender<'a> {
  }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StatusSeverity {
+ Info = 0,
+ Warning = 1,
+ Error = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatusMessage {
+ pub severity: StatusSeverity,
+ pub text: String,
+}
+
+impl Ord for StatusMessage {
+ fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+  self.severity.cmp(&other.severity)
+ }
+}
+
+impl PartialOrd for StatusMessage {
+ fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+  Some(self.cmp(other))
+ }
+}
+
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
- pub statusline_vector: Rc<RefCell<Vec<String>>>,
+ pub statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
 }
 
 impl AppStateReceiverData {
  pub fn new(config: &'static Config) -> Self {
   let mut cbs = Clipboards::new();
-  let mut statusline_vector = Vec::new();
+  let mut statusline_heap = BinaryHeap::new();
   for load_ndjson in &config.load_ndjson {
    let p_load_ndjson = Path::new(load_ndjson);
    let content = read_to_string(p_load_ndjson);
@@ -468,7 +494,10 @@ impl AppStateReceiverData {
     Err(err) => {
      let err_msg = format!("file not readable: {:?} - {}", p_load_ndjson, err);
      eprintln!("{}", err_msg);
-     statusline_vector.push(err_msg);
+     statusline_heap.push(StatusMessage {
+      severity: StatusSeverity::Warning,
+      text: err_msg,
+     });
      continue;
     }
    };
@@ -490,7 +519,7 @@ impl AppStateReceiverData {
   }
   Self {
    cbs,
-   statusline_vector: Rc::new(RefCell::new(statusline_vector)),
+   statusline_heap: Rc::new(RefCell::new(statusline_heap)),
   }
  }
 }
@@ -526,7 +555,7 @@ impl<'a> AppStateReceiver<'a> {
   // self.running.store(true, Ordering::Relaxed);
   assert!(self.is_running());
   let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> = Rc::new(RefCell::new(
-   TermionScreenFirstPage::new(self.config, Rc::clone(&self.data.statusline_vector)),
+   TermionScreenFirstPage::new(self.config, Rc::clone(&self.data.statusline_heap)),
   ));
   let mut tsp_stack: Vec<Rc<RefCell<dyn TermionScreenPainter>>> = vec![];
 
@@ -618,7 +647,12 @@ impl<'a> AppStateReceiver<'a> {
 
    print!("{}", Hide);
    so.flush().unwrap();
-   let ev = self.receiver.recv().unwrap(); // TODO : match
+   let ev = match self.receiver.recv() {
+    Ok(ev) => ev,
+    Err(_) => {
+     break; // abifadosqa
+    }
+   };
    if self.config.debug {
     trace!("ev: {:?}", ev);
    }
@@ -627,10 +661,8 @@ impl<'a> AppStateReceiver<'a> {
    drop(current_painter);
    if let MyEvent::Termion(Event::Key(Key::Esc)) = ev {
     if !is_sticky && !matches!(next_tsp, crate::termionscreen::NextTsp::IgnoreBasicEvents) {
-     let mut statusline = self.data.statusline_vector.borrow_mut();
-     if !statusline.is_empty() {
-      statusline.remove(0);
-     }
+     let mut statusline = self.data.statusline_heap.borrow_mut();
+     statusline.pop();
     }
    }
    let mut ignore_basic_events = false;
@@ -645,8 +677,7 @@ impl<'a> AppStateReceiver<'a> {
     }
     crate::termionscreen::NextTsp::Stack(rc) => tsp_stack.push(rc),
     crate::termionscreen::NextTsp::Quit => {
-     self.set_stopping();
-     break;
+     break; // abifadosqa
     }
     crate::termionscreen::NextTsp::PopThis => {
      tsp_stack.pop();
@@ -707,7 +738,12 @@ impl<'a> AppStateReceiver<'a> {
 
       MyEvent::Tick => {
        if let Some(append_ndjson_filename) = &self.config.append_ndjson {
-        self.data.cbs.append_ndjson(append_ndjson_filename);
+        if let Err(err_msg) = self.data.cbs.append_ndjson(append_ndjson_filename) {
+         self.data.statusline_heap.borrow_mut().push(StatusMessage {
+          severity: StatusSeverity::Error,
+          text: err_msg,
+         });
+        }
        }
       }
       _ => {}
@@ -715,8 +751,7 @@ impl<'a> AppStateReceiver<'a> {
     }
    }
   }
-  // print!("{}", Show); // doesn't get restored by ratatui::restore()
-  // ratatui::restore();
+  self.set_stopping(); // just in case someone breaks abifadosqa
 
   so.flush().unwrap();
  }
