@@ -8,7 +8,7 @@ license = "Apache-2.0"
 license-file = "LICENSE"
 homepage = "https://github.com/schwidom/clipboardstealer"
 repository = "https://github.com/schwidom/clipboardstealer"
-keywords = ["x11", "clipboard", "manager", "clipboardmanager", "terminal", "tui", "term"]
+keywords = ["x11", "clipboard", "manager", "terminal", "tui"]
 readme = "README.txt"
 
 [dependencies]
