@@ -553,7 +553,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    return NextTsp::IgnoreBasicEvents;
   } else {
    match evt {
-    MyEvent::Termion(Event::Key(Key::Esc)) => {
+    MyEvent::Termion(Event::Key(Key::Char('r'))) => {
      self.regex.pop();
     }
     //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,

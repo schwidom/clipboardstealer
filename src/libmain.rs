@@ -492,7 +492,7 @@ impl AppStateReceiverData {
    let content = match content {
     Ok(content) => content,
     Err(err) => {
-     let err_msg = format!("file not readable: {:?} - {}", p_load_ndjson, err);
+     let err_msg = format!("Failed to open load file: {:?} - {}", p_load_ndjson, err);
      eprintln!("{}", err_msg);
      statusline_heap.push(StatusMessage {
       severity: StatusSeverity::Warning,

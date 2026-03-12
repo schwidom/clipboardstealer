@@ -282,7 +282,7 @@ impl Clipboards {
     }
     Err(e) => {
      self.append_file_error_reported = true;
-     return Err(format!("Failed to open append file: {}", e));
+     return Err(format!("Failed to open append file: {:?} - {}", append_ndjson_filename, e));
     }
    }
   }

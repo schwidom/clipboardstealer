@@ -22,18 +22,20 @@ Overview:
   orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
   orientation: Cursor Left, Cursor Right (not implemented yet)
 
-  / (push), Esc (pop) ... stacked regex search
+  / (push), r (pop) ... stacked regex search
 
-  (h)elp ... this screen 
-  (v)iew ... shows the selected entry
-  (e)dit ... edit the selected entry
+  (h)elp   ... this screen 
+  (v)iew   ... shows the selected entry
+  (e)dit   ... edit the selected entry
 
   (s)elect ... selects the chosen entry and 
                enforces it for the specific 
                primary, secondary or clipboard clipboards
-  (fF)lip ... the layout
-  (w)rap ... wraps the lines
+  (fF)lip  ... the layout
+  (w)rap  ... wraps the lines
 
+  Esc    ... discard status messages
+  Esc    ... stop regex editing
 
   (q)uit ... exits a screen
   e(x)it ... exits the program
