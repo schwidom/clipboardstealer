@@ -207,7 +207,7 @@ impl ClipboardThread {
      let cb_strings2: Vec<_> = crws.iter().map(|x| x.read()).collect();
 
      for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] {
+      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() {
        ass
         .sender
         .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
@@ -435,20 +435,31 @@ impl<'a> MouseThread<'a> {
 struct AppStateSender<'a> {
  config: &'static Config,
  running: &'a AtomicBool,
+ paused: &'a AtomicBool,
  sender: Sender<MyEvent>,
 }
 
 impl<'a> AppStateSender<'a> {
- fn new(config: &'static Config, running: &'a AtomicBool, sender: Sender<MyEvent>) -> Self {
+ fn new(
+  config: &'static Config,
+  running: &'a AtomicBool,
+  paused: &'a AtomicBool,
+  sender: Sender<MyEvent>,
+ ) -> Self {
   Self {
    config,
    running,
+   paused,
    sender,
   }
  }
 
  fn is_running(&self) -> bool {
   self.running.load(Ordering::Relaxed)
+ }
+
+ fn is_paused(&self) -> bool {
+  self.paused.load(Ordering::Relaxed)
  }
 }
 
@@ -480,10 +491,11 @@ impl PartialOrd for StatusMessage {
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
  pub statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ pub sender: Sender<MyEvent>,
 }
 
 impl AppStateReceiverData {
- pub fn new(config: &'static Config) -> Self {
+ pub fn new(config: &'static Config, sender: Sender<MyEvent>) -> Self {
   let mut cbs = Clipboards::new();
   let mut statusline_heap = BinaryHeap::new();
   for load_ndjson in &config.load_ndjson {
@@ -520,12 +532,14 @@ impl AppStateReceiverData {
   Self {
    cbs,
    statusline_heap: Rc::new(RefCell::new(statusline_heap)),
+   sender,
   }
  }
 }
 
 pub struct AppStateReceiver<'a> {
  running: &'a AtomicBool,
+ paused: &'a AtomicBool,
  receiver: Receiver<MyEvent>,
  config: &'static Config,
  data: AppStateReceiverData,
@@ -533,12 +547,20 @@ pub struct AppStateReceiver<'a> {
 }
 
 impl<'a> AppStateReceiver<'a> {
- fn new(config: &'static Config, running: &'a AtomicBool, receiver: Receiver<MyEvent>) -> Self {
+ fn new(
+  config: &'static Config,
+  running: &'a AtomicBool,
+  paused: &'a AtomicBool,
+  receiver: Receiver<MyEvent>,
+  sender: Sender<MyEvent>,
+ ) -> Self {
+  let mut data = AppStateReceiverData::new(config, sender);
   Self {
    running,
+   paused,
    receiver,
    config,
-   data: AppStateReceiverData::new(config),
+   data,
    tl: TermionLoop::new(),
   }
  }
@@ -746,6 +768,14 @@ impl<'a> AppStateReceiver<'a> {
         }
        }
       }
+
+      MyEvent::TogglePause => {
+       self.toggle_paused();
+       self
+        .data
+        .sender
+        .send(MyEvent::TogglePauseResult(self.is_paused()));
+      }
       _ => {}
      }
     }
@@ -755,12 +785,27 @@ impl<'a> AppStateReceiver<'a> {
 
   so.flush().unwrap();
  }
+
+ fn is_paused(&self) -> bool {
+  self.paused.load(Ordering::Relaxed)
+ }
+
+ fn toggle_paused(&self) -> bool {
+  let current = self.is_paused();
+  self.paused.store(!current, Ordering::Relaxed);
+  // current <=> "if ! paused", wenn die pause aufgehoben ist X11 clipboard fixations neu schreiben
+  if current {
+   self.data.cbs.refresh_fixation();
+  }
+  !current
+ }
 }
 
 struct AppState<'a> {
  ass: AppStateSender<'a>,
  asr: AppStateReceiver<'a>,
  running: &'a AtomicBool,
+ paused: &'a AtomicBool,
  config: &'static Config,
 }
 
@@ -768,10 +813,12 @@ impl<'a> AppState<'a> {
  fn new(config: &'static Config) -> Self {
   let (sender, receiver) = mpsc::channel();
   let running: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
+  let paused: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
   Self {
-   ass: AppStateSender::new(config, running, sender),
-   asr: AppStateReceiver::new(config, running, receiver),
+   ass: AppStateSender::new(config, running, paused, sender.clone()),
+   asr: AppStateReceiver::new(config, running, paused, receiver, sender),
    running,
+   paused,
    config,
   }
  }

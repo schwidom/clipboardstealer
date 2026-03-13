@@ -31,7 +31,7 @@ use ratatui::layout::{Alignment, Margin, Position, Rect};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
 use ratatui::style::{Color, Style};
-use ratatui::text::Text;
+use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph, Widget, Wrap};
 use ratatui::{DefaultTerminal, Terminal};
 use termion::event::{Event, Key};
@@ -148,6 +148,7 @@ struct TwoScreenDefaultWidget<'a> {
  line_count: usize,
  line_count2: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ paused: bool,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -157,15 +158,22 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  {
   let regex_count_indicator =
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
-  let title = self.main_title.to_string()
+  let title = " ".to_string()
+   + self.main_title
    + &format!(" l({})", self.line_count)
    + if self.wrapped1 { " (w)" } else { "" }
-   + regex_count_indicator;
+   + regex_count_indicator
+   + " ";
+
+  let top_right_line_text = if self.paused { " PAUSED " } else { "" };
+  let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
   let block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
    // .style(Style::new().fg(Color::Blue))
+   .title(Line::from(top_right_line_text).right_aligned())
+   .title_bottom(Line::from(bottom_center_line_text).centered())
    .border_type(BorderType::Rounded);
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
@@ -192,11 +200,13 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   paragraph.render(safe_area, buf);
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
-   let title2 = self.second_title.to_string()
+   let title2 = " ".to_string()
+    + self.second_title
     + &self
      .line_count2
      .map_or("".to_string(), |x| format!(" l({})", x))
-    + if self.wrapped2 { " (w)" } else { "" };
+    + if self.wrapped2 { " (w)" } else { "" }
+    + " ";
 
    // &format!(" l({})", self.line_count2);
 
@@ -353,6 +363,7 @@ pub struct TermionScreenFirstPage {
  layout: Layout,
  flipstate: u8,
  wrapped: bool,
+ paused: bool,
  regex_edit_mode: Option<String>,
  regex_edit_mode_state: String,
  regex_edit_mode_last_working: Option<Regex>,
@@ -373,6 +384,7 @@ impl TermionScreenFirstPage {
    layout: Layout::new(),
    flipstate: 1,
    wrapped: false,
+   paused: false,
    regex_edit_mode: None,
    regex_edit_mode_state: "".to_string(),
    regex_edit_mode_last_working: None,
@@ -508,6 +520,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      // line_count2: selected_string.lines().count(),
      line_count2,
      statusline_heap: Rc::clone(&assd.statusline_heap),
+     paused: self.paused,
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -575,7 +588,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
                                                     // entry.toggle_selection(&mut cbs);
-      cbs.toggle_selection(entry);
+      cbs.toggle_fixation(entry);
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
@@ -615,6 +628,12 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
      self.wrapped = !self.wrapped;
+    }
+    MyEvent::Termion(Event::Key(Key::Char('p'))) => {
+     let _ = assd.sender.send(MyEvent::TogglePause);
+    }
+    MyEvent::TogglePauseResult(paused) => {
+     self.paused = *paused;
     }
     MyEvent::Termion(Event::Key(Key::Char('/'))) => {
      self.regex_edit_mode = Some("".to_string());
@@ -799,6 +818,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     line_count: string_lines.len(),
     line_count2: None,
     statusline_heap: Rc::clone(&assd.statusline_heap),
+    paused: false,
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));

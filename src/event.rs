@@ -28,6 +28,8 @@ pub enum MyEvent {
  Unused,
  CbChanged(CBType, Option<String>),
  Tick,
+ TogglePause,
+ TogglePauseResult(bool),
 }
 
 impl MyEvent {

@@ -173,6 +173,7 @@ impl ClipboardFixation {
   })
  }
 
+ /// writes the values back to its X11 clipboards
  fn restore(&self) {
   if let Some(v) = &self.fixation {
    self.crw.write(v.text.clone());
@@ -341,16 +342,16 @@ impl Clipboards {
  //  }
  // }
 
- pub(crate) fn toggle_selection(&mut self, cbentry: &Rc<CBEntry>) {
+ pub(crate) fn toggle_fixation(&mut self, cbentry: &Rc<CBEntry>) {
   let cf = match self.cfmap.get_mut(&cbentry.cbtype) {
    Some(cf) => cf,
    None => {
-    trace!("toggle_selection: cbtype not found in cfmap");
+    trace!("toggle_selection: cbtype not found in cfmap {:?}", &cbentry.cbtype);
     return;
    }
   };
 
-  trace!("toggle_selection");
+  trace!("toggle_fixation");
 
   let insert = match &cf.fixation {
    Some(f) => !Rc::<CBEntry>::ptr_eq(&f, cbentry),
@@ -364,6 +365,12 @@ impl Clipboards {
    cf.restore();
   } else {
    cf.fixation = None
+  }
+ }
+
+ pub(crate) fn refresh_fixation(&self) {
+  for cf in self.cfmap.values() {
+   cf.restore();
   }
  }
 }
