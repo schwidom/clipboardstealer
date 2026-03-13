@@ -33,6 +33,7 @@ Overview:
                primary, secondary or clipboard clipboards
   (fF)lip  ... the layout
   (w)rap  ... wraps the lines
+  (p)ause ... pauses the clipboard scanning, continues with p
 
   Esc    ... discard status messages
   Esc    ... stop regex editing
