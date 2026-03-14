@@ -16,7 +16,7 @@ lazy_static! {
   r"
 clipboardstealer version {}
 
- clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>]
+ clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...] --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
 
 Overview:
 
