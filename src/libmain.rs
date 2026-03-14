@@ -526,7 +526,9 @@ impl AppStateReceiverData {
      appended: true,
      line_count: cbentry.text.lines().count(),
      cbentry: Rc::new(cbentry),
+     seq: cbs.seq_counter,
     });
+    cbs.seq_counter += 1;
    }
   }
   Self {

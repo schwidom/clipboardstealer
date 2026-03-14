@@ -186,6 +186,7 @@ pub struct AppendedCBEntry {
  pub appended: bool,
  pub line_count: usize,
  pub cbentry: Rc<CBEntry>,
+ pub seq: usize,
 }
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
@@ -202,6 +203,7 @@ pub struct Clipboards {
  pub(crate) cfmap: HashMap<CBType, ClipboardFixation>,
  append_file: Option<File>,
  append_file_error_reported: bool,
+ pub(crate) seq_counter: usize,
 }
 
 impl Clipboards {
@@ -218,6 +220,7 @@ impl Clipboards {
    cfmap,
    append_file: None,
    append_file_error_reported: false,
+   seq_counter: 0,
   }
  }
 
@@ -262,7 +265,9 @@ impl Clipboards {
       timestamp: now,
       text: s.clone(),
      }), // (now, s.clone())
+     seq: self.seq_counter,
     });
+    self.seq_counter += 1;
    }
   }
  }
@@ -371,6 +376,14 @@ impl Clipboards {
  pub(crate) fn refresh_fixation(&self) {
   for cf in self.cfmap.values() {
    cf.restore();
+  }
+ }
+
+ pub(crate) fn remove_by_seq(&mut self, seq: usize) -> Option<AppendedCBEntry> {
+  if let Some(pos) = self.cbentries.iter().position(|e| e.seq == seq) {
+   self.cbentries.remove(pos)
+  } else {
+   None
   }
  }
 }

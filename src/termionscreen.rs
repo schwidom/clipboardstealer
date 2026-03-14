@@ -147,6 +147,7 @@ struct TwoScreenDefaultWidget<'a> {
  regex_count: usize,
  line_count: usize,
  line_count2: Option<usize>,
+ delete_confirm_mode: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
  paused: bool,
 }
@@ -239,6 +240,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let statusline = self.statusline_heap.borrow();
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
+    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+  } else if let Some(_) = &self.delete_confirm_mode {
+   Paragraph::new("delete entry? (y/n) (Esc)")
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   } else if let Some(status_msg) = statusline.peek() {
    Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()) + " (Esc)")
@@ -369,6 +373,7 @@ pub struct TermionScreenFirstPage {
  regex_edit_mode_last_working: Option<Regex>,
  regex: Vec<Regex>,
  regex_filtered_cbs_entries: VecDeque<AppendedCBEntry>,
+ delete_confirm_mode: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
 }
 
@@ -390,6 +395,7 @@ impl TermionScreenFirstPage {
    regex_edit_mode_last_working: None,
    regex: vec![],
    regex_filtered_cbs_entries: VecDeque::new(),
+   delete_confirm_mode: None,
    statusline_heap,
   }
  }
@@ -519,6 +525,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      line_count: entries.len(),
      // line_count2: selected_string.lines().count(),
      line_count2,
+     delete_confirm_mode: self.delete_confirm_mode,
      statusline_heap: Rc::clone(&assd.statusline_heap),
      paused: self.paused,
     };
@@ -560,6 +567,23 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char(char))) => {
      regex_edit_mode.push(*char);
      self.regex_edit_mode.insert(regex_edit_mode);
+    }
+    _ => {}
+   }
+   return NextTsp::IgnoreBasicEvents;
+  } else if self.delete_confirm_mode.is_some() {
+   match evt {
+    MyEvent::Termion(Event::Key(Key::Esc)) => {
+     self.delete_confirm_mode = None;
+    }
+    MyEvent::Termion(Event::Key(Key::Char('y'))) => {
+     if let Some(seq) = self.delete_confirm_mode {
+      cbs.remove_by_seq(seq);
+      self.delete_confirm_mode = None;
+     }
+    }
+    MyEvent::Termion(Event::Key(Key::Char('n'))) => {
+     self.delete_confirm_mode = None;
     }
     _ => {}
    }
@@ -628,6 +652,28 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
      self.wrapped = !self.wrapped;
+    }
+    MyEvent::Termion(Event::Key(Key::Char('d'))) => {
+     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+      let entries = &self.regex_filtered_cbs_entries;
+      if entries.is_empty() {
+      } else {
+       let entry = &entries[cursor];
+       if cbs.is_fixated(&entry.cbentry) {
+        match assd.statusline_heap.try_borrow_mut() {
+         Ok(mut v) => v.push(StatusMessage {
+          severity: crate::libmain::StatusSeverity::Warning,
+          text: "Cannot delete fixated entry".to_string(),
+         }),
+         Err(err) => {
+          trace!("Failed to open statusline heap: ");
+         }
+        }
+       } else {
+        self.delete_confirm_mode = Some(entry.seq);
+       }
+      }
+     }
     }
     MyEvent::Termion(Event::Key(Key::Char('p'))) => {
      let _ = assd.sender.send(MyEvent::TogglePause);
@@ -817,6 +863,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     regex_count: 0,
     line_count: string_lines.len(),
     line_count2: None,
+    delete_confirm_mode: None,
     statusline_heap: Rc::clone(&assd.statusline_heap),
     paused: false,
    };

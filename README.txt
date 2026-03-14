@@ -27,6 +27,7 @@ Overview:
   (h)elp   ... this screen 
   (v)iew   ... shows the selected entry
   (e)dit   ... edit the selected entry
+  (d)elete ... deletes the selected entry
 
   (s)elect ... selects the chosen entry and 
                enforces it for the specific 
