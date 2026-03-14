@@ -16,7 +16,7 @@ lazy_static! {
   r"
 clipboardstealer version {}
 
-clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...]
+ clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>]
 
 Overview:
 
@@ -112,11 +112,20 @@ impl Config {
    } // TODO : else
   }
 
+  // q3jhk95ow6
+  let (append_ndjson, load_ndjson) = if let Some(file) = &args.load_and_append_ndjson {
+   let mut loads = args.load_ndjson.clone();
+   loads.push(file.clone());
+   (Some(file.clone()), loads)
+  } else {
+   (args.append_ndjson.clone(), args.load_ndjson.clone())
+  };
+
   Self {
    debug: args.debug,
    debugfile: args.debugfile.clone(),
-   append_ndjson: args.append_ndjson.clone(),
-   load_ndjson: args.load_ndjson.clone(),
+   append_ndjson,
+   load_ndjson,
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
   }

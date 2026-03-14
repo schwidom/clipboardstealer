@@ -121,6 +121,8 @@ pub struct Args {
  pub(crate) append_ndjson: Option<String>,
  #[arg(long, help = "reads clipboard information from file")]
  pub(crate) load_ndjson: Vec<String>,
+ #[arg(long, help = "loads clipboard information from file and appends to it")]
+ pub(crate) load_and_append_ndjson: Option<String>,
 }
 
 pub(crate) enum CbsError {
@@ -500,6 +502,10 @@ impl AppStateReceiverData {
   let mut statusline_heap = BinaryHeap::new();
   for load_ndjson in &config.load_ndjson {
    let p_load_ndjson = Path::new(load_ndjson);
+   /// no error message if the file don't already exist but is intended to get created
+   if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson.as_ref() {
+    continue;
+   }
    let content = read_to_string(p_load_ndjson);
    let content = match content {
     Ok(content) => content,
@@ -828,6 +834,11 @@ impl<'a> AppState<'a> {
 
 pub fn main() {
  let args = Args::parse();
+ // q3jhk95ow6
+ if args.load_and_append_ndjson.is_some() && args.append_ndjson.is_some() {
+  eprintln!("Error: --load-and-append-ndjson cannot be used together with --append-ndjson");
+  std::process::exit(1);
+ }
 
  {
   // aborts
