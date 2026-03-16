@@ -1,10 +1,11 @@
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::TimeDelta;
@@ -92,14 +93,38 @@ pub struct ClipboardReaderWriter {
  cb: Clipboard,
  atom: Atom,
  // atoms: Atoms,
+ echofree: Arc<Mutex<HashSet<String>>>,
+}
+
+#[derive(Default, PartialEq)]
+pub struct CrwReadInfo {
+ pub text: Option<String>,
+ pub echofree: bool,
 }
 
 impl ClipboardReaderWriter {
+ pub(crate) fn echofree(&self) -> Arc<Mutex<HashSet<String>>> {
+  self.echofree.clone()
+ }
+
  pub(crate) fn from_cbtype(cbtype: &CBType) -> Result<Self, CbsError> {
   let cb = Clipboard::new()?;
   Ok(Self {
    cb,
    atom: cbtype.get_atom(),
+   echofree: Arc::new(Mutex::new(HashSet::new())),
+  })
+ }
+
+ pub(crate) fn from_cbtype_with_echofree(
+  cbtype: &CBType,
+  echofree: Arc<Mutex<HashSet<String>>>,
+ ) -> Result<Self, CbsError> {
+  let cb = Clipboard::new()?;
+  Ok(Self {
+   cb,
+   atom: cbtype.get_atom(),
+   echofree,
   })
  }
 
@@ -122,19 +147,43 @@ impl ClipboardReaderWriter {
  // $ xclip -o -selection clipboard
  // clipboard
 
- pub fn read(&self) -> Option<String> {
+ pub fn crw_read(&self) -> CrwReadInfo {
   let selection = self.atom;
 
   match self
    .cb
    .load(selection, CB_ATOMS.utf8_string, CB_ATOMS.property, Duration::from_secs(3))
   {
-   Ok(selection_u8) => Some(String::from_utf8_lossy(selection_u8.as_slice()).into()),
-   Err(_) => None,
+   Ok(selection_u8) => {
+    let text: Option<String> = Some(String::from_utf8_lossy(selection_u8.as_slice()).into());
+    let echofree = text
+     .as_ref()
+     .map_or(false, |t| self.echofree.lock().unwrap().contains(t));
+    trace!("crw_read text :{:?}", text);
+    trace!("crw_read echofree :{:?}", self.echofree.lock().unwrap());
+    if !echofree {
+     self.echofree.lock().unwrap().clear();
+    }
+    CrwReadInfo { text, echofree }
+   }
+
+   Err(_) => CrwReadInfo::default(),
   }
  }
 
- pub fn write(&self, s: String) -> bool {
+ pub fn crw_write(&self, s: String) -> bool {
+  let value = s.as_bytes();
+  let selection = self.atom;
+
+  self
+   .cb
+   .store(selection, CB_ATOMS.utf8_string, value)
+   .map_or_else(|_| false, |_| true)
+ }
+
+ pub fn crw_write_echofree(&self, s: String) -> bool {
+  let _ = self.echofree.lock().unwrap().insert(s.clone());
+  trace!("crw_write_echofree :{:?}", self.echofree.lock().unwrap());
   let value = s.as_bytes();
   let selection = self.atom;
 
@@ -162,7 +211,7 @@ impl CBEntry {
 }
 pub(crate) struct ClipboardFixation {
  pub crw: ClipboardReaderWriter,
- pub fixation: Option<Rc<CBEntry>>,
+ pub fixation: Option<Rc<RefCell<CBEntry>>>,
 }
 
 impl ClipboardFixation {
@@ -176,7 +225,7 @@ impl ClipboardFixation {
  /// writes the values back to its X11 clipboards
  fn restore(&self) {
   if let Some(v) = &self.fixation {
-   self.crw.write(v.text.clone());
+   self.crw.crw_write(v.borrow().text.clone());
   }
  }
 }
@@ -185,7 +234,7 @@ impl ClipboardFixation {
 pub struct AppendedCBEntry {
  pub appended: bool,
  pub line_count: usize,
- pub cbentry: Rc<CBEntry>,
+ pub cbentry: Rc<RefCell<CBEntry>>,
  pub seq: usize,
 }
 
@@ -235,7 +284,7 @@ impl Clipboards {
     trace!("fixation : {:?}", cf.fixation);
 
     if let Some(fixation) = &cf.fixation {
-     if fixation.text == s {
+     if fixation.borrow().text == s {
       insert = false;
      } else {
       sleep_default();
@@ -249,22 +298,24 @@ impl Clipboards {
 
    if insert {
     let now = MyTime::now();
-    if let Some(last) = self.cbentries.front() {
-     let last_time = &last.cbentry.timestamp;
+    let should_pop_front = if let Some(last) = self.cbentries.front() {
+     let last_time = &last.cbentry.borrow().timestamp;
      let span = now.timestamp - last_time.timestamp;
-     // TODO : configurable milliseconds
-     if cbtype == &last.cbentry.cbtype && span < TimeDelta::milliseconds(300) {
-      self.cbentries.pop_front();
-     }
+     cbtype == &last.cbentry.borrow().cbtype && span < TimeDelta::milliseconds(300)
+    } else {
+     false
+    };
+    if should_pop_front {
+     self.cbentries.pop_front();
     }
     self.cbentries.push_front(AppendedCBEntry {
      appended: false,
      line_count: s.lines().count(),
-     cbentry: Rc::new(CBEntry {
+     cbentry: Rc::new(RefCell::new(CBEntry {
       cbtype: cbtype.clone(),
       timestamp: now,
       text: s.clone(),
-     }), // (now, s.clone())
+     })), // (now, s.clone())
      seq: self.seq_counter,
     });
     self.seq_counter += 1;
@@ -304,7 +355,7 @@ impl Clipboards {
     if cbentry.appended {
      break;
     } else {
-     let span = now.timestamp - cbentry.cbentry.timestamp.timestamp;
+     let span = now.timestamp - cbentry.cbentry.borrow().timestamp.timestamp;
      if span > TimeDelta::milliseconds(300) {
       let json_str = serde_json::to_string(&*cbentry.cbentry)
        .map_err(|e| format!("Serialization error: {}", e))?;
@@ -317,12 +368,12 @@ impl Clipboards {
   })
  }
 
- pub fn is_fixated(&self, cbentry: &Rc<CBEntry>) -> bool {
+ pub fn is_fixated(&self, cbentry: &Rc<RefCell<CBEntry>>) -> bool {
   self
    .cfmap
    .iter()
    .filter(|x| match &x.1.fixation {
-    Some(f) => Rc::<CBEntry>::ptr_eq(&f, cbentry),
+    Some(f) => Rc::<RefCell<CBEntry>>::ptr_eq(&f, cbentry),
     None => false,
    })
    .count()
@@ -347,11 +398,11 @@ impl Clipboards {
  //  }
  // }
 
- pub(crate) fn toggle_fixation(&mut self, cbentry: &Rc<CBEntry>) {
-  let cf = match self.cfmap.get_mut(&cbentry.cbtype) {
+ pub(crate) fn toggle_fixation(&mut self, cbentry: &Rc<RefCell<CBEntry>>) {
+  let cf = match self.cfmap.get_mut(&cbentry.borrow().cbtype) {
    Some(cf) => cf,
    None => {
-    trace!("toggle_selection: cbtype not found in cfmap {:?}", &cbentry.cbtype);
+    trace!("toggle_selection: cbtype not found in cfmap {:?}", &cbentry.borrow().cbtype);
     return;
    }
   };
@@ -359,7 +410,7 @@ impl Clipboards {
   trace!("toggle_fixation");
 
   let insert = match &cf.fixation {
-   Some(f) => !Rc::<CBEntry>::ptr_eq(&f, cbentry),
+   Some(f) => !Rc::<RefCell<CBEntry>>::ptr_eq(&f, cbentry),
    None => true,
   };
 
@@ -376,6 +427,53 @@ impl Clipboards {
  pub(crate) fn refresh_fixation(&self) {
   for cf in self.cfmap.values() {
    cf.restore();
+  }
+ }
+
+ fn get_clipboard_contents_of_cbtype(&self, cbtype: &CBType) -> Option<Rc<RefCell<CBEntry>>> {
+  self
+   .cbentries
+   .iter()
+   .find(|x| &x.cbentry.borrow().cbtype == cbtype)
+   .map(|x| Rc::clone(&x.cbentry))
+ }
+
+ pub(crate) fn toggle_clipboards(&mut self) {
+  let (primary_fixated, primary_content) = {
+   let cbtype = &CBType::Primary;
+   let cf = &self.cfmap[cbtype];
+   cf.fixation.as_ref().map_or_else(
+    || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
+    |x| (true, Some(Rc::clone(x))),
+   )
+  };
+
+  let (clipboard_fixated, clipboard_content) = {
+   let cbtype = &CBType::Clipboard;
+   let cf = &self.cfmap[cbtype];
+   cf.fixation.as_ref().map_or_else(
+    || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
+    |x| (true, Some(Rc::clone(x))),
+   )
+  };
+
+  let (mut primary_content, mut clipboard_content) = match (primary_content, clipboard_content) {
+   (Some(pc), Some(cc)) => (pc, cc),
+   _ => {
+    return;
+   }
+  };
+
+  if primary_content.borrow().text == clipboard_content.borrow().text {
+   return;
+  }
+
+  {
+   let (pc, cc) = (primary_content.borrow().text.clone(), clipboard_content.borrow().text.clone());
+   primary_content.borrow_mut().text = cc.clone();
+   clipboard_content.borrow_mut().text = pc.clone();
+   self.cfmap[&CBType::Primary].crw.crw_write_echofree(cc);
+   self.cfmap[&CBType::Clipboard].crw.crw_write_echofree(pc);
   }
  }
 

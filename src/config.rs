@@ -46,10 +46,11 @@ Keys:
  (v)iew   ... shows the selected entry
  (e)dit   ... edit the selected entry
  (d)elete ... deletes the selected entry
- (s)elect ... selects the chosen entry and 
-              enforces it for the specific 
-              primary, secondary or clipboard clipboards
- (fF)lip ... the layout
+  (s)elect ... selects the chosen entry and 
+               enforces it for the specific 
+               primary, secondary or clipboard clipboards
+  (t)oggle ... toggles primary <-> clipboard
+  (fF)lip ... the layout
  (w)rap  ... wraps the lines
  (p)ause ... pauses the clipboard scanning, continues with p
 

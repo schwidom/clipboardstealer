@@ -36,7 +36,7 @@ use xcb_1::{
 use std::{
  cell::RefCell,
  cmp::min,
- collections::BinaryHeap,
+ collections::{BinaryHeap, HashMap, HashSet},
  env::var_os,
  ffi::OsString,
  fs::{read_to_string, OpenOptions},
@@ -74,10 +74,12 @@ use tracing::{event, info, span, trace, Level};
 
 use clap::{builder::IntoResettable, Parser};
 
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::{
+ atomic::{AtomicBool, Ordering},
+ Arc, Mutex,
+};
 
-use crate::clipboards::CBType;
+use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
 use enum_iterator::all;
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
@@ -188,17 +190,27 @@ impl ClipboardThread {
   Self {}
  }
 
- fn run(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
+ fn run(
+  &mut self,
+  ass: &'static AppStateSender,
+  cfmap: &HashMap<CBType, ClipboardFixation>,
+ ) -> JoinHandle<Result<(), CbsError>> {
+  let echofree_vec: Vec<(CBType, Arc<Mutex<HashSet<String>>>)> = cfmap
+   .iter()
+   .map(|(cbtype, cf)| (cbtype.clone(), cf.crw.echofree()))
+   .collect();
+
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
-   let crws: Vec<ClipboardReaderWriter> = all::<CBType>()
-    .collect::<Vec<_>>()
+   let crws: Vec<ClipboardReaderWriter> = echofree_vec
     .iter()
-    .filter_map(|x: &CBType| ClipboardReaderWriter::from_cbtype(x).ok())
+    .filter_map(|(cbtype, echofree): &(CBType, Arc<Mutex<HashSet<String>>>)| {
+     ClipboardReaderWriter::from_cbtype_with_echofree(cbtype, echofree.clone()).ok()
+    })
     .collect();
 
    if !crws.is_empty() {
     // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
-    let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
+    let mut cb_strings: Vec<_> = crws.iter().map(|_| CrwReadInfo::default()).collect();
 
     loop {
      ass.config.wait_for_external_program();
@@ -206,13 +218,16 @@ impl ClipboardThread {
       break Ok(());
      }
 
-     let cb_strings2: Vec<_> = crws.iter().map(|x| x.read()).collect();
+     let cb_strings2: Vec<_> = crws
+      .iter()
+      .map(|x: &ClipboardReaderWriter| x.crw_read())
+      .collect();
 
      for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() {
+      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && !cb_strings2[i].echofree {
        ass
         .sender
-        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
+        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].text.clone()))
         .unwrap();
       }
      }
@@ -531,7 +546,7 @@ impl AppStateReceiverData {
     cbs.cbentries.push_back(AppendedCBEntry {
      appended: true,
      line_count: cbentry.text.lines().count(),
-     cbentry: Rc::new(cbentry),
+     cbentry: Rc::new(RefCell::new(cbentry)),
      seq: cbs.seq_counter,
     });
     cbs.seq_counter += 1;
@@ -926,7 +941,7 @@ pub fn main() {
  let ttjh = tt.run(&appstate.ass);
 
  let mut ct = ClipboardThread::new();
- let ctjh = ct.run(&appstate.ass);
+ let ctjh = ct.run(&appstate.ass, &appstate.asr.data.cbs.cfmap);
 
  if config.debug {
   monitor2("ms");

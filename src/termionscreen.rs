@@ -443,7 +443,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let mut r = self.regex.clone();
       r.extend(self.regex_edit_mode_last_working.iter().cloned());
       for r in r {
-       if !r.is_match(&line.cbentry.text) {
+       if !r.is_match(&line.cbentry.borrow().text) {
         res = false;
         break;
        }
@@ -457,7 +457,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .map(|x| (**x).clone())
      .collect::<VecDeque<AppendedCBEntry>>();
 
-    let mut selected_string = &String::default();
+    let mut selected_string = String::new();
     let mut line_count2 = None;
 
     if self.config.debug {
@@ -487,8 +487,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
      let selection_star = if is_selected { "*" } else { " " };
 
+     let cbentry = cbentry.borrow();
+
      if is_cursor {
-      selected_string = &cbentry.text;
+      selected_string = cbentry.text.clone();
       line_count2.insert(entry.line_count);
      }
 
@@ -615,6 +617,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       cbs.toggle_fixation(entry);
      }
     }
+    MyEvent::Termion(Event::Key(Key::Char('t'))) => {
+     cbs.toggle_clipboards();
+    }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
@@ -622,7 +627,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
        self.config,
        "view entry".to_string(),
-       entry.cbentry.text.clone(),
+       entry.cbentry.borrow().text.clone(),
       ))));
      }
     }
@@ -631,7 +636,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       let entry = &entries[cursor];
 
-      match TermionScreenEditorPage::new(self.config, entry.cbentry.text.clone(), cursor) {
+      match TermionScreenEditorPage::new(self.config, entry.cbentry.borrow().text.clone(), cursor) {
        Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
        Err(e) => {
         eprintln!("Failed to create editor page: {}", e);
@@ -741,14 +746,8 @@ impl TermionScreenPainter for TermionScreenEditorPage {
     let idx = self.index;
 
     if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
-     // let mut cbentry = (*entry.cbentry).clone();
-     // entry.cbentry = Rc::new(cbentry);
      entry.line_count = new_text.lines().count();
-     // entry.cbentry).text = new_text.clone();
-     entry.cbentry = Rc::new(CBEntry {
-      text: new_text.clone(),
-      ..(*entry.cbentry).clone()
-     });
+     entry.cbentry.borrow_mut().text = new_text.clone();
     }
    }
   }
