@@ -995,7 +995,7 @@ pub fn main() {
 
  // stdout().flush().unwrap();
  // ratatui::restore();
- // println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
+ println!("{}", AnsiGenericString::title("Clipboardstealer ended"));
 
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that

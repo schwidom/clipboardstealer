@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -211,7 +211,7 @@ impl CBEntry {
 }
 pub(crate) struct ClipboardFixation {
  pub crw: ClipboardReaderWriter,
- pub fixation: Option<Rc<RefCell<CBEntry>>>,
+ pub fixation: Option<AppendedCBEntry>,
 }
 
 impl ClipboardFixation {
@@ -224,13 +224,13 @@ impl ClipboardFixation {
 
  /// writes the values back to its X11 clipboards
  fn restore(&self) {
-  if let Some(v) = &self.fixation {
-   self.crw.crw_write(v.borrow().text.clone());
+  if let Some(fixation) = &self.fixation {
+   self.crw.crw_write(fixation.cbentry.borrow().text.clone());
   }
  }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppendedCBEntry {
  pub appended: bool,
  pub line_count: usize,
@@ -243,6 +243,7 @@ pub struct Clipboards {
  // pub hm: HashMap<String, ClipboardSelectionList>,
  // pub crw: ClipboardReaderWriter,
  pub cbentries: VecDeque<AppendedCBEntry>,
+ pub last_entries: HashMap<CBType, AppendedCBEntry>,
  // NOTE : no weak pointer here, Optional<Rc> is better,
  // even if entry disappears from the list (currently not possible but maybe later)
  // it can still be selected
@@ -266,6 +267,7 @@ impl Clipboards {
 
   Self {
    cbentries: VecDeque::new(),
+   last_entries: HashMap::new(),
    cfmap,
    append_file: None,
    append_file_error_reported: false,
@@ -284,7 +286,7 @@ impl Clipboards {
     trace!("fixation : {:?}", cf.fixation);
 
     if let Some(fixation) = &cf.fixation {
-     if fixation.borrow().text == s {
+     if fixation.cbentry.borrow().text == s {
       insert = false;
      } else {
       sleep_default();
@@ -308,16 +310,29 @@ impl Clipboards {
     if should_pop_front {
      self.cbentries.pop_front();
     }
+    let cbentry = Rc::new(RefCell::new(CBEntry {
+     cbtype: cbtype.clone(),
+     timestamp: now,
+     text: s.clone(),
+    }));
+    let line_count = s.lines().count();
+    let seq = self.seq_counter;
     self.cbentries.push_front(AppendedCBEntry {
      appended: false,
-     line_count: s.lines().count(),
-     cbentry: Rc::new(RefCell::new(CBEntry {
-      cbtype: cbtype.clone(),
-      timestamp: now,
-      text: s.clone(),
-     })), // (now, s.clone())
-     seq: self.seq_counter,
+     line_count,
+     cbentry: cbentry.clone(), // (now, s.clone())
+     seq,
     });
+    // self.last_entries.get_mut(&cbentry.borrow().cbtype) = cbentry;
+    self.last_entries.insert(
+     cbentry.borrow().cbtype.clone(),
+     AppendedCBEntry {
+      appended: false,
+      line_count,
+      cbentry: cbentry.clone(),
+      seq,
+     },
+    );
     self.seq_counter += 1;
    }
   }
@@ -373,7 +388,7 @@ impl Clipboards {
    .cfmap
    .iter()
    .filter(|x| match &x.1.fixation {
-    Some(f) => Rc::<RefCell<CBEntry>>::ptr_eq(&f, cbentry),
+    Some(f) => Rc::<RefCell<CBEntry>>::ptr_eq(&f.cbentry, cbentry),
     None => false,
    })
    .count()
@@ -398,7 +413,8 @@ impl Clipboards {
  //  }
  // }
 
- pub(crate) fn toggle_fixation(&mut self, cbentry: &Rc<RefCell<CBEntry>>) {
+ pub(crate) fn toggle_fixation(&mut self, appended_cbentry: &AppendedCBEntry) {
+  let cbentry = &appended_cbentry.cbentry;
   let cf = match self.cfmap.get_mut(&cbentry.borrow().cbtype) {
    Some(cf) => cf,
    None => {
@@ -410,15 +426,18 @@ impl Clipboards {
   trace!("toggle_fixation");
 
   let insert = match &cf.fixation {
-   Some(f) => !Rc::<RefCell<CBEntry>>::ptr_eq(&f, cbentry),
+   Some(f) => !Rc::<RefCell<CBEntry>>::ptr_eq(&f.cbentry, cbentry),
    None => true,
   };
 
   trace!("toggle_selection : insert : {insert}");
 
   if insert {
-   cf.fixation = Some(Rc::clone(cbentry));
+   cf.fixation = Some(appended_cbentry.clone());
    cf.restore();
+   self
+    .last_entries
+    .insert(appended_cbentry.cbentry.borrow().cbtype.clone(), appended_cbentry.clone());
   } else {
    cf.fixation = None
   }
@@ -431,33 +450,29 @@ impl Clipboards {
  }
 
  fn get_clipboard_contents_of_cbtype(&self, cbtype: &CBType) -> Option<Rc<RefCell<CBEntry>>> {
-  self
-   .cbentries
-   .iter()
-   .find(|x| &x.cbentry.borrow().cbtype == cbtype)
-   .map(|x| Rc::clone(&x.cbentry))
+  self.last_entries.get(cbtype).map(|x| x.cbentry.clone())
  }
 
  pub(crate) fn toggle_clipboards(&mut self) {
-  let (primary_fixated, primary_content) = {
+  let (_primary_fixated, primary_content) = {
    let cbtype = &CBType::Primary;
    let cf = &self.cfmap[cbtype];
    cf.fixation.as_ref().map_or_else(
     || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
-    |x| (true, Some(Rc::clone(x))),
+    |x| (true, Some(Rc::clone(&x.cbentry))),
    )
   };
 
-  let (clipboard_fixated, clipboard_content) = {
+  let (_clipboard_fixated, clipboard_content) = {
    let cbtype = &CBType::Clipboard;
    let cf = &self.cfmap[cbtype];
    cf.fixation.as_ref().map_or_else(
     || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
-    |x| (true, Some(Rc::clone(x))),
+    |x| (true, Some(Rc::clone(&x.cbentry))),
    )
   };
 
-  let (mut primary_content, mut clipboard_content) = match (primary_content, clipboard_content) {
+  let (primary_content, clipboard_content) = match (primary_content, clipboard_content) {
    (Some(pc), Some(cc)) => (pc, cc),
    _ => {
     return;

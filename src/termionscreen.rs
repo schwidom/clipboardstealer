@@ -2,7 +2,7 @@
 #![allow(unused)]
 
 use std::cell::RefCell;
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::collections::{BinaryHeap, VecDeque};
 
 use std::fs::{self, File};
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use std::rc::Rc;
 
-use crate::clipboards::{AppendedCBEntry, CBEntry};
+use crate::clipboards::{AppendedCBEntry, CBEntry, CBType};
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -25,6 +25,7 @@ use crate::pager::Pager;
 use crate::scroller::Scroller;
 use crate::tools::tabfix;
 
+use enum_iterator::all;
 use mktemp::Temp;
 use ratatui::crossterm::terminal;
 use ratatui::layout::{Alignment, Margin, Position, Rect};
@@ -372,9 +373,15 @@ pub struct TermionScreenFirstPage {
  regex_edit_mode_state: String,
  regex_edit_mode_last_working: Option<Regex>,
  regex: Vec<Regex>,
- regex_filtered_cbs_entries: VecDeque<AppendedCBEntry>,
+ regex_filtered_cbs_entries: VecDeque<FilteredCbsEntries>,
  delete_confirm_mode: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+}
+
+enum FilteredCbsEntries {
+ ACE(AppendedCBEntry),
+ Line,
+ Empty,
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -454,8 +461,53 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     self.regex_filtered_cbs_entries = entries
      .iter()
-     .map(|x| (**x).clone())
-     .collect::<VecDeque<AppendedCBEntry>>();
+     .map(|x| FilteredCbsEntries::ACE((**x).clone()))
+     .collect::<VecDeque<FilteredCbsEntries>>();
+
+    drop(entries);
+
+    {
+     let cbtype_enum_vector: Vec<CBType> = all::<CBType>().collect::<Vec<_>>();
+     let mut last_entries = cbtype_enum_vector
+      .iter()
+      .map(|x| {
+       /*       if let Some(cbf) = cbs.cfmap.get(x) {
+        if cbf.fixation.is_some() {
+         cbf.fixation.as_ref()
+        } else {
+         cbs.last_entries.get(&x)
+        }
+       } else */
+       {
+        cbs.last_entries.get(&x)
+       }
+      })
+      .collect::<Vec<_>>();
+
+     last_entries.sort_by(|a, b| match (a, b) {
+      (None, None) => Ordering::Equal,
+      (None, Some(_)) => Ordering::Less,
+      (Some(_), None) => Ordering::Greater,
+      (Some(c), Some(d)) => c
+       .cbentry
+       .borrow()
+       .timestamp
+       .cmp(&d.cbentry.borrow().timestamp),
+     });
+
+     self
+      .regex_filtered_cbs_entries
+      .push_front(FilteredCbsEntries::Line);
+     last_entries
+      .iter()
+      .map(|x| match x {
+       Some(v) => FilteredCbsEntries::ACE((*v).clone()),
+       None => FilteredCbsEntries::Empty,
+      })
+      .for_each(|x| self.regex_filtered_cbs_entries.push_front(x));
+    }
+
+    let entries = &self.regex_filtered_cbs_entries;
 
     let mut selected_string = String::new();
     let mut line_count2 = None;
@@ -474,38 +526,48 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
 
     for (idx, entry) in entries.range(scroller.get_safe_windowrange()).enumerate() {
-     let cbentry = &entry.cbentry;
-     let is_cursor = match scroller.get_cursor() {
-      None => false,
-      Some(value) => idx == value,
-     };
+     match entry {
+      FilteredCbsEntries::ACE(appended_cbentry) => {
+       let cbentry = &appended_cbentry.cbentry;
+       let is_cursor = match scroller.get_cursor() {
+        None => false,
+        Some(value) => idx == value,
+       };
 
-     let cursor_star = if is_cursor { ">" } else { " " };
+       let cursor_star = if is_cursor { ">" } else { " " };
 
-     // let is_selected = entry.is_selected(cbs);
-     let is_selected = cbs.is_fixated(cbentry);
+       // let is_selected = entry.is_selected(cbs);
+       let is_selected = cbs.is_fixated(cbentry);
 
-     let selection_star = if is_selected { "*" } else { " " };
+       let selection_star = if is_selected { "*" } else { " " };
 
-     let cbentry = cbentry.borrow();
+       let cbentry = cbentry.borrow();
 
-     if is_cursor {
-      selected_string = cbentry.text.clone();
-      line_count2.insert(entry.line_count);
-     }
+       if is_cursor {
+        selected_string = cbentry.text.clone();
+        line_count2.insert(appended_cbentry.line_count);
+       }
 
-     {
-      let s002 = format!(
-       "{} {} {:width$} {} {} : {}",
-       cursor_star,
-       selection_star,
-       idx + scroller.get_windowposition(), // mqbojcmkot
-       cbentry.cbtype.get_info(),
-       cbentry.get_date_time(),
-       cbentry.text,
-       width = numbers_width,
-      );
-      lines.push(layout.fixline(&s002));
+       {
+        let s002 = format!(
+         "{} {} {:width$} {} {} : {}",
+         cursor_star,
+         selection_star,
+         idx + scroller.get_windowposition(), // mqbojcmkot
+         cbentry.cbtype.get_info(),
+         cbentry.get_date_time(),
+         cbentry.text,
+         width = numbers_width,
+        );
+        lines.push(layout.fixline(&s002));
+       }
+      }
+      FilteredCbsEntries::Line => {
+       lines.push("----- ↑ active ↑ ----- ↓ incoming ↓ -----".into());
+      }
+      FilteredCbsEntries::Empty => {
+       lines.push("".into());
+      }
      }
     }
 
@@ -612,9 +674,12 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
-      let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
-                                                    // entry.toggle_selection(&mut cbs);
-      cbs.toggle_fixation(entry);
+      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
+       // let entry = &appended_cbentry.cbentry.clone();
+       // let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
+       // entry.toggle_selection(&mut cbs);
+       cbs.toggle_fixation(appended_cbentry);
+      }
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('t'))) => {
@@ -623,34 +688,41 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
-      let entry = &entries[cursor];
-      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
-       self.config,
-       "view entry".to_string(),
-       entry.cbentry.borrow().text.clone(),
-      ))));
+      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
+       return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
+        self.config,
+        "view entry".to_string(),
+        appended_cbentry.cbentry.borrow().text.clone(),
+       ))));
+      };
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('e'))) => {
      if let Some(cursor) = self.scroller.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
-      let entry = &entries[cursor];
+      // let entry = &entries[cursor];
 
-      match TermionScreenEditorPage::new(self.config, entry.cbentry.borrow().text.clone(), cursor) {
-       Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
-       Err(e) => {
-        eprintln!("Failed to create editor page: {}", e);
-        match assd.statusline_heap.try_borrow_mut() {
-         Ok(mut v) => v.push(StatusMessage {
-          severity: crate::libmain::StatusSeverity::Warning,
-          text: format!("Failed to create editor page: {}", e),
-         }),
-         Err(err) => {
-          trace!("Failed to create editor page: {}", e);
-          trace!("Failed to open statusline heap: ");
+      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
+       match TermionScreenEditorPage::new(
+        self.config,
+        appended_cbentry.cbentry.borrow().text.clone(),
+        cursor,
+       ) {
+        Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
+        Err(e) => {
+         eprintln!("Failed to create editor page: {}", e);
+         match assd.statusline_heap.try_borrow_mut() {
+          Ok(mut v) => v.push(StatusMessage {
+           severity: crate::libmain::StatusSeverity::Warning,
+           text: format!("Failed to create editor page: {}", e),
+          }),
+          Err(err) => {
+           trace!("Failed to create editor page: {}", e);
+           trace!("Failed to open statusline heap: ");
+          }
          }
+         return NextTsp::NoNextTsp;
         }
-        return NextTsp::NoNextTsp;
        }
       }
      }
@@ -663,19 +735,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
       } else {
-       let entry = &entries[cursor];
-       if cbs.is_fixated(&entry.cbentry) {
-        match assd.statusline_heap.try_borrow_mut() {
-         Ok(mut v) => v.push(StatusMessage {
-          severity: crate::libmain::StatusSeverity::Warning,
-          text: "Cannot delete fixated entry".to_string(),
-         }),
-         Err(err) => {
-          trace!("Failed to open statusline heap: ");
-         }
-        }
-       } else {
-        self.delete_confirm_mode = Some(entry.seq);
+       if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
+        self.delete_confirm_mode = Some(appended_cbentry.seq);
        }
       }
      }
