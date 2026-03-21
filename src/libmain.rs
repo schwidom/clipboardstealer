@@ -127,6 +127,7 @@ pub struct Args {
  pub(crate) load_and_append_ndjson: Option<String>,
 }
 
+#[derive(Debug)]
 pub(crate) enum CbsError {
  PoisonError,
  UnitError,
@@ -210,7 +211,7 @@ impl ClipboardThread {
 
    if !crws.is_empty() {
     // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
-    let mut cb_strings: Vec<_> = crws.iter().map(|_| CrwReadInfo::default()).collect();
+    let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
 
     loop {
      ass.config.wait_for_external_program();
@@ -224,15 +225,16 @@ impl ClipboardThread {
       .collect();
 
      for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && !cb_strings2[i].echofree {
+      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && cb_strings2[i] != None{
        ass
         .sender
-        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].text.clone()))
+        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
         .unwrap();
+       cb_strings[i] = cb_strings2[i].clone();
       }
      }
 
-     cb_strings = cb_strings2;
+     // cb_strings = cb_strings2;
 
      sleep_default(); // cgyeofnrzk
     }

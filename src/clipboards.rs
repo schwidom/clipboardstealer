@@ -1,3 +1,4 @@
+// use std::borrow::Borrow; // TODO : why does this lead to an compiler error?
 use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -5,6 +6,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -94,6 +96,7 @@ pub struct ClipboardReaderWriter {
  atom: Atom,
  // atoms: Atoms,
  echofree: Arc<Mutex<HashSet<String>>>,
+ echofree_read: AtomicBool,
 }
 
 #[derive(Default, PartialEq)]
@@ -113,6 +116,7 @@ impl ClipboardReaderWriter {
    cb,
    atom: cbtype.get_atom(),
    echofree: Arc::new(Mutex::new(HashSet::new())),
+   echofree_read: AtomicBool::new(false),
   })
  }
 
@@ -125,6 +129,7 @@ impl ClipboardReaderWriter {
    cb,
    atom: cbtype.get_atom(),
    echofree,
+   echofree_read: AtomicBool::new(false),
   })
  }
 
@@ -147,7 +152,7 @@ impl ClipboardReaderWriter {
  // $ xclip -o -selection clipboard
  // clipboard
 
- pub fn crw_read(&self) -> CrwReadInfo {
+ pub fn crw_read(&self) -> Option<String> {
   let selection = self.atom;
 
   match self
@@ -155,19 +160,30 @@ impl ClipboardReaderWriter {
    .load(selection, CB_ATOMS.utf8_string, CB_ATOMS.property, Duration::from_secs(3))
   {
    Ok(selection_u8) => {
+    let mut echofree = self.echofree.lock().unwrap();
     let text: Option<String> = Some(String::from_utf8_lossy(selection_u8.as_slice()).into());
-    let echofree = text
-     .as_ref()
-     .map_or(false, |t| self.echofree.lock().unwrap().contains(t));
+    let echofree_bool = text.as_ref().map_or(false, |t| echofree.contains(t));
     trace!("crw_read text :{:?}", text);
     trace!("crw_read echofree :{:?}", self.echofree.lock().unwrap());
-    if !echofree {
-     self.echofree.lock().unwrap().clear();
+    if !echofree_bool
+     && self
+      .echofree_read
+      .load(std::sync::atomic::Ordering::Relaxed)
+    {
+     // self.echofree.lock().unwrap().clear();
+     echofree.clear();
     }
-    CrwReadInfo { text, echofree }
+    self
+     .echofree_read
+     .store(true, std::sync::atomic::Ordering::Relaxed);
+    if echofree_bool {
+     None
+    } else {
+     text
+    }
    }
 
-   Err(_) => CrwReadInfo::default(),
+   Err(_) => None,
   }
  }
 
@@ -182,8 +198,14 @@ impl ClipboardReaderWriter {
  }
 
  pub fn crw_write_echofree(&self, s: String) -> bool {
-  let _ = self.echofree.lock().unwrap().insert(s.clone());
-  trace!("crw_write_echofree :{:?}", self.echofree.lock().unwrap());
+  let mut echofree = self.echofree.lock().unwrap();
+  echofree.insert(s.clone());
+  self
+   .echofree_read
+   .store(false, std::sync::atomic::Ordering::Relaxed);
+  // let x = self.echofree.lock().unwrap().insert(s.clone());
+  // trace!("crw_write_echofree :{:?}", self.echofree.lock().unwrap());
+  trace!("crw_write_echofree :{:?}", echofree);
   let value = s.as_bytes();
   let selection = self.atom;
 
@@ -225,7 +247,9 @@ impl ClipboardFixation {
  /// writes the values back to its X11 clipboards
  fn restore(&self) {
   if let Some(fixation) = &self.fixation {
-   self.crw.crw_write(fixation.cbentry.borrow().text.clone());
+   self
+    .crw
+    .crw_write_echofree(fixation.cbentry.borrow().text.clone());
   }
  }
 }
@@ -280,10 +304,7 @@ impl Clipboards {
    let mut insert: bool = true;
 
    {
-    // let cf: &ClipboardFixation = &self.cfmap[AsRef::<String>::as_ref(&atom_string)];
     let cf: &ClipboardFixation = &self.cfmap[&cbtype];
-
-    trace!("fixation : {:?}", cf.fixation);
 
     if let Some(fixation) = &cf.fixation {
      if fixation.cbentry.borrow().text == s {
@@ -294,6 +315,14 @@ impl Clipboards {
       sleep_default();
       // TODO : configurable rewrite delay
       cf.restore();
+     }
+    }
+   }
+
+   {
+    if let Some(appended_cbentry) = self.last_entries.get(&cbtype) {
+     if appended_cbentry.cbentry.borrow().text == s {
+      insert = false;
      }
     }
    }
@@ -395,24 +424,6 @@ impl Clipboards {
    != 0
  }
 
- // pub fn is_fixated_atom_text(&self, atom_string: &str, text: &str) -> bool {
- //  let cf: &ClipboardFixation = &self.cfmap[atom_string];
-
- //  match &cf.fixation {
- //   Some(f) => f.string == text,
- //   None => false,
- //  }
- // }
-
- // pub fn get_fixation_atom_text(&self, atom_string: &str) -> Option<&str> {
- //  let cf: &ClipboardFixation = &self.cfmap[atom_string];
-
- //  match &cf.fixation {
- //   Some(f) => Some(&f.string),
- //   None => None,
- //  }
- // }
-
  pub(crate) fn toggle_fixation(&mut self, appended_cbentry: &AppendedCBEntry) {
   let cbentry = &appended_cbentry.cbentry;
   let cf = match self.cfmap.get_mut(&cbentry.borrow().cbtype) {
@@ -430,7 +441,7 @@ impl Clipboards {
    None => true,
   };
 
-  trace!("toggle_selection : insert : {insert}");
+  trace!("toggle_fixation : insert : {insert}");
 
   if insert {
    cf.fixation = Some(appended_cbentry.clone());
@@ -454,23 +465,14 @@ impl Clipboards {
  }
 
  pub(crate) fn toggle_clipboards(&mut self) {
-  let (_primary_fixated, primary_content) = {
-   let cbtype = &CBType::Primary;
-   let cf = &self.cfmap[cbtype];
-   cf.fixation.as_ref().map_or_else(
-    || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
-    |x| (true, Some(Rc::clone(&x.cbentry))),
-   )
-  };
-
-  let (_clipboard_fixated, clipboard_content) = {
-   let cbtype = &CBType::Clipboard;
-   let cf = &self.cfmap[cbtype];
-   cf.fixation.as_ref().map_or_else(
-    || (false, self.get_clipboard_contents_of_cbtype(cbtype)),
-    |x| (true, Some(Rc::clone(&x.cbentry))),
-   )
-  };
+  let primary_content = self
+   .last_entries
+   .get(&CBType::Primary)
+   .map(|x| Rc::clone(&x.cbentry));
+  let clipboard_content = self
+   .last_entries
+   .get(&CBType::Clipboard)
+   .map(|x| Rc::clone(&x.cbentry));
 
   let (primary_content, clipboard_content) = match (primary_content, clipboard_content) {
    (Some(pc), Some(cc)) => (pc, cc),
@@ -498,5 +500,59 @@ impl Clipboards {
   } else {
    None
   }
+ }
+}
+
+#[cfg(test)]
+mod tests {
+ use super::ClipboardReaderWriter;
+ use std::{
+  sync::{Arc, Mutex},
+  thread,
+  time::{Duration, Instant},
+ };
+
+ #[ignore]
+ #[test]
+ fn test_mutex() {
+  let _start = Instant::now();
+  let handle = thread::spawn(|| {
+   let m = Mutex::new("");
+   let x = m.lock();
+   let y = m.lock();
+   drop(x);
+   drop(y);
+  });
+
+  let _ = handle.join();
+ }
+
+ #[test]
+ fn test_001() {
+  let sleep_msecs = 0;
+  let cbrw_s = ClipboardReaderWriter::from_cbtype(&super::CBType::Primary).unwrap();
+  cbrw_s.crw_write_echofree("abc".into());
+  // cbrw_s.crw_write("abc".into());
+  let x = cbrw_s.crw_read();
+  assert_eq!(None, x);
+  std::thread::sleep(Duration::from_millis(sleep_msecs));
+  let x = cbrw_s.crw_read();
+  assert_eq!(None, x);
+  std::thread::sleep(Duration::from_millis(sleep_msecs));
+  let x = cbrw_s.crw_read();
+  assert_eq!(None, x);
+
+  cbrw_s.crw_write("def".into());
+
+  let x = cbrw_s.crw_read();
+  assert_eq!(Some("def".into()), x);
+  std::thread::sleep(Duration::from_millis(sleep_msecs));
+  let x = cbrw_s.crw_read();
+  assert_eq!(Some("def".into()), x);
+  std::thread::sleep(Duration::from_millis(sleep_msecs));
+  let x = cbrw_s.crw_read();
+  assert_eq!(Some("def".into()), x);
+
+  // assert_eq!("abc", x.unwrap());
  }
 }
