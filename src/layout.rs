@@ -46,6 +46,16 @@ impl Layout {
    .collect()
  }
 
+ pub fn centerline(&self, string: &str) -> String {
+  let z = flatline(string);
+  let width = self.width.unwrap_or(80) as usize - 2;
+  if z.len() >= width {
+   return z.chars().take(width).collect();
+  }
+  let padding = (width - z.len()) / 2;
+  format!("{:^width$}", z)
+ }
+
  // pub fn print_line_wrap(&mut self) {}
  // pub fn print_line_cut(&mut self, line: &str) {
  //  print!("{}", termion::cursor::Goto(1, self.current_line));

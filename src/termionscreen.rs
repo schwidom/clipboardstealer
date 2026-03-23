@@ -46,9 +46,14 @@ use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk // exten
 use regex::Match;
 use regex::Regex;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ActiveArea {
+ Main,
+ Second,
+}
+
 // TODO : into tools.rs
 fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
- // let mut current_width: usize = 0;
  let last_idx = text
   .char_indices()
   .map(|(pos, char)| {
@@ -60,9 +65,31 @@ fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
   .map(|(w, _w_cjk)| w)
   .last()
   .unwrap_or(0);
-
- // println!("last_idx : {:?}", last_idx);
  &text[0..last_idx]
+}
+
+fn render_scroller_lines<T>(
+ scroller: &Scroller,
+ items: &[T],
+ wrapped: bool,
+ layout: &Layout,
+ formatter: impl Fn(&str, usize, usize, &T) -> String,
+) -> String {
+ let numbers_width = (items.len() as f64).log10().ceil() as usize;
+ let mut lines = vec![];
+
+ for (idx, item) in items[scroller.get_safe_windowrange()].iter().enumerate() {
+  let is_cursor = match scroller.get_cursor() {
+   None => false,
+   Some(value) => idx == value,
+  };
+  let cursor_star = if is_cursor { ">" } else { " " };
+
+  let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
+  lines.push(if wrapped { line } else { layout.fixline(&line) });
+ }
+
+ lines.join("\n")
 }
 
 #[cfg(test)]
@@ -120,6 +147,50 @@ fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
  ret
 }
 
+fn apply_horizontal_offset(text: &str, offset: usize) -> String {
+ if offset == 0 {
+  return text.to_string();
+ }
+
+ text
+  .split('\n')
+  .map(|line| {
+   let mut display_width = 0;
+   let mut byte_offset = 0;
+   for (i, c) in line.char_indices() {
+    let char_width = c.width().unwrap_or(0);
+    if display_width + char_width <= offset {
+     display_width += char_width;
+     byte_offset = i + c.len_utf8();
+    } else {
+     byte_offset = i;
+     break;
+    }
+   }
+   if byte_offset >= line.len() {
+    "".to_string()
+   } else {
+    line[byte_offset..].to_string()
+   }
+  })
+  .collect::<Vec<_>>()
+  .join("\n")
+}
+
+fn apply_hoffset_and_trim(text: &str, rect: ratatui::layout::Rect, hoffset: usize) -> String {
+ let max_width = rect.width as usize;
+ let max_height = rect.height as usize;
+
+ let offset_text = apply_horizontal_offset(text, hoffset);
+
+ offset_text
+  .split("\n")
+  .take(max_height)
+  .map(|line| truncate_before_or_at_display_width(line, max_width))
+  .collect::<Vec<_>>()
+  .join("\n")
+}
+
 struct RatatuiVariables {
  pl: Box<dyn PagerLayout>,
 }
@@ -151,6 +222,9 @@ struct TwoScreenDefaultWidget<'a> {
  delete_confirm_mode: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
  paused: bool,
+ active_area: ActiveArea,
+ hoffset_main: usize,
+ hoffset_second: usize,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -170,13 +244,18 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
-  let block = Block::bordered()
+  let is_main_active = self.active_area == ActiveArea::Main;
+
+  let mut block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
-   // .style(Style::new().fg(Color::Blue))
    .title(Line::from(top_right_line_text).right_aligned())
    .title_bottom(Line::from(bottom_center_line_text).centered())
    .border_type(BorderType::Rounded);
+
+  if !is_main_active {
+   block = block.border_style(Style::new().fg(Color::Gray));
+  }
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
@@ -184,8 +263,11 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   let all_lines = self.all_lines;
   let all_lines = tabfix(&all_lines);
-  let all_lines =
-   if self.wrapped1 { all_lines } else { trim_text_to_rect_with(self.all_lines, safe_area) };
+  let all_lines = if self.wrapped1 {
+   all_lines
+  } else {
+   apply_hoffset_and_trim(self.all_lines, safe_area, self.hoffset_main)
+  };
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
 
@@ -212,11 +294,18 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // &format!(" l({})", self.line_count2);
 
-   let block2 = Block::bordered()
+   let is_second_active = self.active_area == ActiveArea::Second;
+   let second_border_style =
+    if is_second_active { Style::new().fg(Color::White) } else { Style::new().fg(Color::Gray) };
+
+   let mut block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
     .border_type(BorderType::Rounded);
 
+   if !is_second_active {
+    block2 = block2.border_style(Style::new().fg(Color::Gray));
+   }
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(buf.area); // avoids crash
@@ -226,7 +315,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let all_lines2 = if self.wrapped2 {
     self.all_lines2.to_owned()
    } else {
-    trim_text_to_rect_with(self.all_lines2, safe_area2)
+    apply_hoffset_and_trim(self.all_lines2, safe_area2, self.hoffset_second)
    };
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
@@ -364,7 +453,8 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
 
 pub struct TermionScreenFirstPage {
  config: &'static Config,
- scroller: Scroller,
+ scroller_main: Scroller,
+ scroller_second: Scroller,
  layout: Layout,
  flipstate: u8,
  wrapped: bool,
@@ -376,6 +466,10 @@ pub struct TermionScreenFirstPage {
  regex_filtered_cbs_entries: VecDeque<FilteredCbsEntries>,
  delete_confirm_mode: Option<usize>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ active_area: ActiveArea,
+ main_width: usize,
+ second_width: usize,
+ prev_selected_text: Option<String>,
 }
 
 enum FilteredCbsEntries {
@@ -392,7 +486,8 @@ impl TermionScreenFirstPage {
  ) -> Self {
   Self {
    config,
-   scroller: Scroller::new(),
+   scroller_main: Scroller::new(),
+   scroller_second: Scroller::new(),
    layout: Layout::new(),
    flipstate: 1,
    wrapped: false,
@@ -404,6 +499,10 @@ impl TermionScreenFirstPage {
    regex_filtered_cbs_entries: VecDeque::new(),
    delete_confirm_mode: None,
    statusline_heap,
+   active_area: ActiveArea::Main,
+   main_width: 80,
+   second_width: 80,
+   prev_selected_text: None,
   }
  }
 
@@ -413,13 +512,66 @@ impl TermionScreenFirstPage {
  fn flipstate_prev(&mut self) {
   self.flipstate = (self.flipstate + 2) % 3;
  }
+
+ fn get_max_hoffset_main(&self) -> usize {
+  let entries = &self.regex_filtered_cbs_entries;
+  let max_line_width = entries
+   .iter()
+   .map(|e| match e {
+    FilteredCbsEntries::ACE(a) => a.cbentry.borrow().text.width(),
+    _ => 0,
+   })
+   .max()
+   .unwrap_or(0);
+  max_line_width.saturating_sub(self.main_width / 2)
+ }
+
+ fn get_max_hoffset_second(&self) -> usize {
+  let entries = &self.regex_filtered_cbs_entries;
+  let max_line_width = entries
+   .iter()
+   .filter_map(|e| match e {
+    FilteredCbsEntries::ACE(a) => {
+     if a.cbentry.borrow().text.contains('\n') {
+      Some(
+       a.cbentry
+        .borrow()
+        .text
+        .lines()
+        .map(|l| l.width())
+        .max()
+        .unwrap_or(0),
+      )
+     } else {
+      Some(a.cbentry.borrow().text.width())
+     }
+    }
+    _ => None,
+   })
+   .max()
+   .unwrap_or(0);
+  max_line_width.saturating_sub(self.second_width / 2)
+ }
+
+ fn toggle_active_area(&mut self) {
+  self.active_area = match self.active_area {
+   ActiveArea::Main => ActiveArea::Second,
+   ActiveArea::Second => ActiveArea::Main,
+  };
+ }
+
+ fn get_active_scroller(&mut self) -> &mut Scroller {
+  match self.active_area {
+   ActiveArea::Main => &mut self.scroller_main,
+   ActiveArea::Second => &mut self.scroller_second,
+  }
+ }
 }
 
 impl TermionScreenPainter for TermionScreenFirstPage {
  /// the paint method opens a TwoScreenDefaultWidget which is later painted
  /// by the terminal.draw method
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
-  let scroller = &mut self.scroller;
   let layout = &mut self.layout;
 
   let cbs = &mut assd.cbs;
@@ -431,6 +583,12 @@ impl TermionScreenPainter for TermionScreenFirstPage {
   } else {
    &RatatuiVariables::new::<PagerLayoutLR>(terminal)
   };
+
+  self.main_width = rv.pl.get_main_area().width as usize;
+  self.second_width = rv
+   .pl
+   .get_second_main_area()
+   .map_or(self.main_width, |r| r.width as usize);
 
   {
    let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
@@ -515,21 +673,37 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     if self.config.debug {
      trace!("scroller.set_content_length(entries.len()) : {}", entries.len());
     }
-    scroller.set_content_length(entries.len());
+    self.scroller_main.set_hwindowlength(self.main_width);
+    self.scroller_second.set_hwindowlength(self.second_width);
+    self.scroller_main.set_content_length(entries.len());
+
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
-    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
+    self
+     .scroller_main
+     .set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
+
+    let second_area_height = rv
+     .pl
+     .get_second_main_area()
+     .map_or(0, |r| r.inner(Margin::new(0, 1)).height as usize);
+    self.scroller_second.set_windowlength(second_area_height);
 
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
 
     if self.config.debug {
-     trace!("scroller.get_safe_windowrange() : {:?}", scroller.get_safe_windowrange());
+     trace!("scroller.get_safe_windowrange() : {:?}", self.scroller_main.get_safe_windowrange());
     }
 
-    for (idx, entry) in entries.range(scroller.get_safe_windowrange()).enumerate() {
+    // iwcqjc9i11 Example for the line selection
+
+    for (idx, entry) in entries
+     .range(self.scroller_main.get_safe_windowrange())
+     .enumerate()
+    {
      match entry {
       FilteredCbsEntries::ACE(appended_cbentry) => {
        let cbentry = &appended_cbentry.cbentry;
-       let is_cursor = match scroller.get_cursor() {
+       let is_cursor = match self.scroller_main.get_cursor() {
         None => false,
         Some(value) => idx == value,
        };
@@ -544,6 +718,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        let cbentry = cbentry.borrow();
 
        if is_cursor {
+        if self.prev_selected_text.as_ref() != Some(&cbentry.text) {
+         self.scroller_second.reset_hoffset();
+         self.prev_selected_text = Some(cbentry.text.clone());
+        }
         selected_string = cbentry.text.clone();
         line_count2.insert(appended_cbentry.line_count);
        }
@@ -553,7 +731,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
          "{} {} {:width$} {} {} : {}",
          cursor_star,
          selection_star,
-         idx + scroller.get_windowposition(), // mqbojcmkot
+         idx + self.scroller_main.get_windowposition(), // mqbojcmkot
          cbentry.cbtype.get_info(),
          cbentry.get_date_time(),
          cbentry.text,
@@ -563,7 +741,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        }
       }
       FilteredCbsEntries::Line => {
-       lines.push("----- ↑ active ↑ ----- ↓ incoming ↓ -----".into());
+       lines.push(layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"));
       }
       FilteredCbsEntries::Empty => {
        lines.push("".into());
@@ -573,6 +751,21 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     let all_lines = lines.join("\n");
 
+    let all_lines2 = {
+     let string_lines: Vec<&str> = selected_string.lines().collect();
+     self.scroller_second.set_content_length(string_lines.len());
+
+     render_scroller_lines(
+      &self.scroller_second,
+      &string_lines,
+      self.wrapped,
+      &layout,
+      |cursor_star, idx, numbers_width, entry| {
+       format!("{} {:width$} : {}", cursor_star, idx, entry, width = numbers_width,)
+      },
+     )
+    };
+
     let sw = TwoScreenDefaultWidget {
      helpline: HELP_FIRST_PAGE,
      main_title: "entry list",
@@ -580,7 +773,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      rv,
      // tsfp: &self,
      all_lines: &all_lines,
-     all_lines2: &selected_string,
+     all_lines2: &all_lines2,
      wrapped1: false,
      wrapped2: self.wrapped,
      regex_edit_mode: self.regex_edit_mode.clone(),
@@ -592,6 +785,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      delete_confirm_mode: self.delete_confirm_mode,
      statusline_heap: Rc::clone(&assd.statusline_heap),
      paused: self.paused,
+     active_area: self.active_area,
+     hoffset_main: self.scroller_main.get_hoffset(),
+     hoffset_second: self.scroller_second.get_hoffset(),
     };
 
     terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -672,7 +868,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      self.flipstate_prev();
     }
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
-     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
        // let entry = &appended_cbentry.cbentry.clone();
@@ -686,7 +882,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      cbs.toggle_clipboards();
     }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
-     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
        return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
@@ -698,7 +894,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('e'))) => {
-     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       // let entry = &entries[cursor];
 
@@ -730,8 +926,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char('w'))) => {
      self.wrapped = !self.wrapped;
     }
+    MyEvent::Termion(Event::Key(Key::Char('\t'))) => {
+     self.toggle_active_area();
+    }
     MyEvent::Termion(Event::Key(Key::Char('d'))) => {
-     if let Some(cursor) = self.scroller.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
       } else {
@@ -751,8 +950,16 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      self.regex_edit_mode = Some("".to_string());
     }
     _ => {
-     // Pager::handle_event(&mut scroller, &evt);
-     Pager::handle_event(&mut self.scroller, evt);
+     // TODO : optimize
+     let max_offset = match self.active_area {
+      ActiveArea::Main => self.get_max_hoffset_main(),
+      ActiveArea::Second => self.get_max_hoffset_second(),
+     };
+
+     let scroller = self.get_active_scroller();
+
+     scroller.set_max_hoffset(max_offset);
+     Pager::handle_event(scroller, evt);
     }
    }
   }
@@ -858,6 +1065,12 @@ impl TermionScreenViewPage {
    wrapped: false,
   }
  }
+
+ fn get_max_hoffset(&self) -> usize {
+  let max_line_width = self.text.lines().map(|l| l.width()).max().unwrap_or(0);
+  let window_width = 80;
+  max_line_width.saturating_sub(window_width / 2)
+ }
 }
 
 impl TermionScreenPainter for TermionScreenViewPage {
@@ -873,41 +1086,19 @@ impl TermionScreenPainter for TermionScreenViewPage {
    let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
    layout.set_width_height(width, height);
 
-   let mut lines = vec![];
+   scroller.set_content_length(string_lines.len());
+   // scroller.set_windowlength(height + 1 - layout.get_current_line());
+   scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
 
-   {
-    scroller.set_content_length(string_lines.len());
-    // scroller.set_windowlength(height + 1 - layout.get_current_line());
-    scroller.set_windowlength(rv.pl.get_main_area().inner(Margin::new(0, 1)).height as usize);
-
-    let numbers_width = (string_lines.len() as f64).log10().ceil() as usize;
-
-    for (idx, entry) in string_lines[scroller.get_safe_windowrange()]
-     .iter()
-     .enumerate()
-    {
-     let is_cursor = match scroller.get_cursor() {
-      None => false,
-      Some(value) => idx == value,
-     };
-
-     let cursor_star = if is_cursor { ">" } else { " " };
-
-     let s002 = format!(
-      "{} {:width$} : {}",
-      cursor_star,
-      idx + scroller.get_windowposition(), // mqbojcmkot
-      entry,
-      width = numbers_width,
-     );
-
-     lines.push(if self.wrapped { s002.to_string() } else { layout.fixline(&s002) });
-
-     // layout.print_line_cut(&s002);
-    }
-   }
-
-   let all_lines = lines.join("\n");
+   let all_lines = render_scroller_lines(
+    scroller,
+    &string_lines,
+    self.wrapped,
+    layout,
+    |cursor_star, idx, numbers_width, entry| {
+     format!("{} {:width$} : {}", cursor_star, idx, entry, width = numbers_width,)
+    },
+   );
 
    let sw = TwoScreenDefaultWidget {
     helpline: HELP_QX,
@@ -926,6 +1117,9 @@ impl TermionScreenPainter for TermionScreenViewPage {
     delete_confirm_mode: None,
     statusline_heap: Rc::clone(&assd.statusline_heap),
     paused: false,
+    active_area: ActiveArea::Main,
+    hoffset_main: self.scroller.get_hoffset(),
+    hoffset_second: 0,
    };
 
    terminal.draw(|frame| frame.render_widget(sw, frame.area()));
@@ -941,6 +1135,8 @@ impl TermionScreenPainter for TermionScreenViewPage {
    //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
    _ => {
     // Pager::handle_event(&mut scroller, &evt);
+    // TODO : optimize
+    self.scroller.set_max_hoffset(self.get_max_hoffset());
     Pager::handle_event(&mut self.scroller, evt);
    }
   }

@@ -37,8 +37,8 @@ Installation:
 
 Keys: 
 
- orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
- orientation: Cursor Left, Cursor Right (not implemented yet)
+ orientation: Up, Down, PgUp, PgDown, Home, End
+ orientation: Left, Right, Shift Left, Shift Right
 
  / (push), r (pop) ... stacked regex search
 
@@ -48,16 +48,18 @@ Keys:
  (d)elete ... deletes the selected entry
  (t)oggle ... toggles the contents of the clipboards 'primary' and 'clipboards'
 
-  (s)elect ... selects the chosen entry and 
-               enforces it for the specific 
-               primary, secondary or clipboard clipboards
-  (t)oggle ... toggles primary <-> clipboard
-  (fF)lip ... the layout
+ (s)elect ... selects the chosen entry and 
+              enforces it for the specific 
+              primary, secondary or clipboard clipboards
+ (t)oggle ... toggles primary <-> clipboard
+ (fF)lip ... the layout
  (w)rap  ... wraps the lines
  (p)ause ... pauses the clipboard scanning, continues with p
 
  Esc     ... discard status messages
  Esc     ... stop regex editing
+
+ Tab    ... switch windows
 
  (q)uit  ... exits a screen
  e(x)it  ... exits the program

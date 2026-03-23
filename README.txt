@@ -19,8 +19,8 @@ Overview:
 
  Keys: 
 
-  orientation: Cursor Up, Cursor Down, PgUp, PgDown, Home, End
-  orientation: Cursor Left, Cursor Right (not implemented yet)
+  orientation: Up, Down, PgUp, PgDown, Home, End
+  orientation: Left, Right, Shift Left, Shift Right
 
   / (push), r (pop) ... stacked regex search
 
@@ -39,6 +39,8 @@ Overview:
 
   Esc    ... discard status messages
   Esc    ... stop regex editing
+
+  Tab    ... switch windows
 
   (q)uit ... exits a screen
   e(x)it ... exits the program

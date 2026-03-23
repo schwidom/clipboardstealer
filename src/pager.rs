@@ -5,7 +5,6 @@ use crate::{
  scroller::{CursorRepetitions, Scroller},
 };
 
-// adunlel2iq
 pub struct Pager;
 
 impl Pager {
@@ -28,6 +27,21 @@ impl Pager {
    }
    MyEvent::Termion(Event::Key(Key::PageDown)) => {
     scroller.cursor_increase_by(CursorRepetitions::WindowLength);
+   }
+   MyEvent::Termion(Event::Key(Key::Left)) => {
+    scroller.scroll_left();
+   }
+   MyEvent::Termion(Event::Key(Key::ShiftLeft)) => {
+    scroller.reset_hoffset();
+   }
+//    MyEvent::Termion(Event::Key(Key::ShiftRight)) => {
+//     scroller.scroll_right_to_end();
+//    }
+   MyEvent::Termion(Event::Key(Key::Right)) => {
+    scroller.scroll_right();
+   }
+   MyEvent::Termion(Event::Key(Key::ShiftRight)) => {
+    scroller.scroll_right_to_end_with_max();
    }
    _ => {}
   }

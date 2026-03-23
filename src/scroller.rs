@@ -10,6 +10,10 @@ pub struct Scroller {
  cursor: Option<usize>, // NOTE: u16 would be enough but lesser casting operations
  /// can be freely defined
  contentlength: usize,
+
+ hoffset: usize,
+ hwindowlength: usize,
+ max_hoffset: usize,
 }
 
 // constraints:
@@ -25,6 +29,9 @@ impl Scroller {
    windowposition: 0,
    cursor: None,
    contentlength: 0,
+   hoffset: 0,
+   hwindowlength: 80,
+   max_hoffset: 0,
   }
  }
 
@@ -32,7 +39,7 @@ impl Scroller {
   min(self.contentlength, self.windowposition)
  }
 
- pub fn get_windowposition(&self) -> usize {
+ pub(crate) fn get_windowposition(&self) -> usize {
   self.windowposition
  }
 
@@ -40,10 +47,10 @@ impl Scroller {
   min(self.contentlength, self.windowposition + self.windowlength)
  }
 
- pub fn get_safe_windowrange(&self) -> Range<usize> {
+ pub(crate) fn get_safe_windowrange(&self) -> Range<usize> {
   return self.get_safe_windowstart()..self.get_safe_windowend();
  }
- pub fn get_cursor_in_array(&self) -> Option<usize> {
+ pub(crate) fn get_cursor_in_array(&self) -> Option<usize> {
   match self.cursor {
    None => None,
    Some(cursor) => {
@@ -54,7 +61,7 @@ impl Scroller {
   }
  }
 
- pub fn cursor_increase(&mut self) -> bool {
+ pub(crate) fn cursor_increase(&mut self) -> bool {
   match (self.get_cursor_in_array(), Some(self.contentlength)) {
    // TODO : optimize
    (None, None) => {}
@@ -133,7 +140,7 @@ impl Scroller {
   }
  }
 
- pub fn cursor_decrease(&mut self) -> bool {
+ pub(crate) fn cursor_decrease(&mut self) -> bool {
   match (self.get_cursor_in_array(), Some(self.contentlength)) {
    // TODO : optimize
    (None, None) => {}
@@ -193,7 +200,7 @@ impl Scroller {
   }
  }
 
- pub fn cursor_decrease_by(&mut self, cr: CursorRepetitions) {
+ pub(crate) fn cursor_decrease_by(&mut self, cr: CursorRepetitions) {
   let amount = match cr {
    CursorRepetitions::WindowLength => self.windowlength,
    CursorRepetitions::Count(value) => value,
@@ -206,7 +213,7 @@ impl Scroller {
   }
  }
 
- pub fn cursor_increase_by(&mut self, cr: CursorRepetitions) {
+ pub(crate) fn cursor_increase_by(&mut self, cr: CursorRepetitions) {
   let amount = match cr {
    CursorRepetitions::WindowLength => self.windowlength,
    CursorRepetitions::Count(value) => value,
@@ -233,7 +240,7 @@ impl Scroller {
   }
  }
 
- pub fn set_windowlength(&mut self, len: usize) {
+ pub(crate) fn set_windowlength(&mut self, len: usize) {
   if len == 0 {
    self.cursor = None;
   }
@@ -245,20 +252,66 @@ impl Scroller {
  }
 
  // TODO : calculations gtewxxi8oh
- pub fn set_content_length(&mut self, cl: usize) {
+ pub(crate) fn set_content_length(&mut self, cl: usize) {
   self.contentlength = cl;
   self.cursorfix();
  }
 
- pub fn get_content_length(&self) -> usize {
+ pub(crate) fn get_content_length(&self) -> usize {
   self.contentlength
  }
 
- pub fn get_windowlength(&self) -> usize {
+ pub(crate) fn get_windowlength(&self) -> usize {
   self.windowlength
  }
- pub fn get_cursor(&self) -> Option<usize> {
+ pub(crate) fn get_cursor(&self) -> Option<usize> {
   self.cursor
+ }
+
+ pub(crate) fn set_hwindowlength(&mut self, len: usize) {
+  self.hwindowlength = len;
+ }
+
+ pub(crate) fn get_hwindowlength(&self) -> usize {
+  self.hwindowlength
+ }
+
+ pub(crate) fn get_hoffset(&self) -> usize {
+  self.hoffset
+ }
+
+ pub(crate) fn set_hoffset(&mut self, offset: usize) {
+  self.hoffset = offset;
+ }
+
+ pub(crate) fn scroll_left(&mut self) {
+  let step = self.hwindowlength.saturating_div(2);
+  self.hoffset = self.hoffset.saturating_sub(step);
+ }
+
+ pub(crate) fn scroll_right(&mut self) {
+  let step = self.hwindowlength / 2;
+  self.hoffset = (self.hoffset + step).min(self.max_hoffset);
+ }
+
+ pub(crate) fn reset_hoffset(&mut self) {
+  self.hoffset = 0;
+ }
+
+ pub(crate) fn scroll_to_end(&mut self) {
+  self.hoffset = self.max_hoffset;
+ }
+
+//  pub(crate) fn scroll_right_to_end(&mut self) {
+//   self.hoffset = self.hwindowlength * 2;
+//  }
+
+ pub(crate) fn scroll_right_to_end_with_max(&mut self) {
+  self.hoffset = self.max_hoffset;
+ }
+
+ pub(crate) fn set_max_hoffset(&mut self, max_hoffset: usize) {
+  self.max_hoffset = max_hoffset;
  }
 }
 pub enum CursorRepetitions {
