@@ -232,9 +232,12 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  where
   Self: Sized,
  {
+  let is_main_active = self.active_area == ActiveArea::Main;
+
   let regex_count_indicator =
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
   let title = " ".to_string()
+   + if is_main_active { "* " } else { "  " }
    + self.main_title
    + &format!(" l({})", self.line_count)
    + if self.wrapped1 { " (w)" } else { "" }
@@ -244,8 +247,6 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
-  let is_main_active = self.active_area == ActiveArea::Main;
-
   let mut block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
@@ -253,9 +254,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    .title_bottom(Line::from(bottom_center_line_text).centered())
    .border_type(BorderType::Rounded);
 
-  if !is_main_active {
-   block = block.border_style(Style::new().fg(Color::Gray));
-  }
+  // if !is_main_active {
+  //  block = block.border_style(Style::new().fg(Color::Gray));
+  // }
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
@@ -283,8 +284,11 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   // Clear.render(safe_area, buf); // doesn't fix the tab problem
   paragraph.render(safe_area, buf);
 
+  let is_second_active = self.active_area == ActiveArea::Second;
+
   if let Some(sma) = self.rv.pl.get_second_main_area() {
    let title2 = " ".to_string()
+    + if is_second_active { "* " } else { "  " }
     + self.second_title
     + &self
      .line_count2
@@ -294,18 +298,15 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // &format!(" l({})", self.line_count2);
 
-   let is_second_active = self.active_area == ActiveArea::Second;
-   let second_border_style =
-    if is_second_active { Style::new().fg(Color::White) } else { Style::new().fg(Color::Gray) };
-
    let mut block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
     .border_type(BorderType::Rounded);
 
-   if !is_second_active {
-    block2 = block2.border_style(Style::new().fg(Color::Gray));
-   }
+   // if !is_second_active {
+   //  block2 = block2.border_style(Style::new().fg(Color::Gray));
+   // }
+
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(buf.area); // avoids crash
