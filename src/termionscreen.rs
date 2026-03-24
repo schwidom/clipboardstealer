@@ -1,18 +1,16 @@
-#![allow(dead_code)]
-#![allow(unused)]
+// #![allow(dead_code)]
+// #![allow(unused)]
 
 use std::cell::RefCell;
-use std::cmp::{min, Ordering};
+use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 
 use std::fs::{self, File};
-use std::io::{stdout, Stdout, Write};
-use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use std::rc::Rc;
 
-use crate::clipboards::{AppendedCBEntry, CBEntry, CBType};
+use crate::clipboards::{AppendedCBEntry, CBType};
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -27,24 +25,20 @@ use crate::tools::tabfix;
 
 use enum_iterator::all;
 use mktemp::Temp;
-use ratatui::crossterm::terminal;
-use ratatui::layout::{Alignment, Margin, Position, Rect};
-use ratatui::prelude::CrosstermBackend;
-use ratatui::style::Stylize;
-use ratatui::style::{Color, Style};
+use ratatui::layout::{Alignment, Margin};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph, Widget, Wrap};
-use ratatui::{DefaultTerminal, Terminal};
+use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
+use ratatui::DefaultTerminal;
 use termion::event::{Event, Key};
-use termion::{self, scroll};
+use termion::{self};
 
-use tracing::{event, info, span, trace, Instrument, Level};
+use tracing::trace;
 
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk // extends char by width, width_cjk
 
-use regex::Match;
 use regex::Regex;
+use std::io::Write; // write_all
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ActiveArea {
@@ -61,7 +55,7 @@ fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
    let w_cjk = text[0..pos].width_cjk() + char.width_cjk().unwrap_or(0);
    (w, w_cjk)
   })
-  .take_while(|(w, w_cjk)| *w_cjk <= width)
+  .take_while(|(_, w_cjk)| *w_cjk <= width)
   .map(|(w, _w_cjk)| w)
   .last()
   .unwrap_or(0);
@@ -94,7 +88,7 @@ fn render_scroller_lines<T>(
 
 #[cfg(test)]
 mod tests {
- use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
+ // use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
  use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk
 
  use super::truncate_before_or_at_display_width;
@@ -142,9 +136,9 @@ fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
   .map(|x| truncate_before_or_at_display_width(x, max_width))
   .collect::<Vec<_>>();
 
- let ret = trimmed.join("\n");
+ 
  // trace!("trim_text_to_rect_with: ret {:?}", ret);
- ret
+ trimmed.join("\n")
 }
 
 fn apply_horizontal_offset(text: &str, offset: usize) -> String {
@@ -232,6 +226,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  where
   Self: Sized,
  {
+  assert_eq!(area, buf.area);
   let is_main_active = self.active_area == ActiveArea::Main;
 
   let regex_count_indicator =
@@ -247,7 +242,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
-  let mut block = Block::bordered()
+  let block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
    .title(Line::from(top_right_line_text).right_aligned())
@@ -263,11 +258,11 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let safe_area = rect1.intersection(buf.area); // avoids crash
 
   let all_lines = self.all_lines;
-  let all_lines = tabfix(&all_lines);
+  let all_lines = tabfix(all_lines);
   let all_lines = if self.wrapped1 {
    all_lines
   } else {
-   apply_hoffset_and_trim(self.all_lines, safe_area, self.hoffset_main)
+   apply_hoffset_and_trim(&all_lines, safe_area, self.hoffset_main)
   };
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
@@ -298,7 +293,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // &format!(" l({})", self.line_count2);
 
-   let mut block2 = Block::bordered()
+   let block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
     .border_type(BorderType::Rounded);
@@ -312,11 +307,11 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let safe_area2 = rect2.intersection(buf.area); // avoids crash
 
    let all_lines2 = self.all_lines2;
-   let all_lines2 = tabfix(&all_lines2);
+   let all_lines2 = tabfix(all_lines2);
    let all_lines2 = if self.wrapped2 {
-    self.all_lines2.to_owned()
+    all_lines2
    } else {
-    apply_hoffset_and_trim(self.all_lines2, safe_area2, self.hoffset_second)
+    apply_hoffset_and_trim(&all_lines2, safe_area2, self.hoffset_second)
    };
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
@@ -332,7 +327,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
-  } else if let Some(_) = &self.delete_confirm_mode {
+  } else if self.delete_confirm_mode.is_some() {
    Paragraph::new("delete entry? (y/n) (Esc)")
     .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
   } else if let Some(status_msg) = statusline.peek() {
@@ -418,7 +413,7 @@ impl TermionScreenStatusBarDialogYN {
 }
 
 impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
- fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
+ fn paint(&mut self, terminal: &mut DefaultTerminal, _assd: &mut AppStateReceiverData) {
   let rv = &RatatuiVariables::new::<PagerLayoutBase>(terminal);
 
   // if let Some(rc) = &self.tsp_before {
@@ -427,15 +422,17 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
   // }
 
   //  writes in the correct area but overwrites the upper part
-  terminal.draw(|frame| {
-   frame.render_widget(
-    Paragraph::new(self.question.clone()),
-    rv.pl.get_status_area().intersection(frame.area()),
-   )
-  });
+  terminal
+   .draw(|frame| {
+    frame.render_widget(
+     Paragraph::new(self.question.clone()),
+     rv.pl.get_status_area().intersection(frame.area()),
+    )
+   })
+   .unwrap();
  }
 
- fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
+ fn handle_event(&mut self, evt: &MyEvent, _assd: &mut AppStateReceiverData) -> NextTsp {
   // if let Some(rc) = &self.tsp_before {
   //  // rc.borrow_mut().handle_event(evt, assd); // TODO : filter events
   // }
@@ -466,7 +463,6 @@ pub struct TermionScreenFirstPage {
  regex: Vec<Regex>,
  regex_filtered_cbs_entries: VecDeque<FilteredCbsEntries>,
  delete_confirm_mode: Option<usize>,
- statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
  active_area: ActiveArea,
  main_width: usize,
  second_width: usize,
@@ -481,10 +477,7 @@ enum FilteredCbsEntries {
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
 impl TermionScreenFirstPage {
- pub fn new(
-  config: &'static Config,
-  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
- ) -> Self {
+ pub fn new(config: &'static Config) -> Self {
   Self {
    config,
    scroller_main: Scroller::new(),
@@ -499,7 +492,6 @@ impl TermionScreenFirstPage {
    regex: vec![],
    regex_filtered_cbs_entries: VecDeque::new(),
    delete_confirm_mode: None,
-   statusline_heap,
    active_area: ActiveArea::Main,
    main_width: 80,
    second_width: 80,
@@ -592,7 +584,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    .map_or(self.main_width, |r| r.width as usize);
 
   {
-   let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
+   let (width, height) = termion::terminal_size().unwrap_or((80, 24));
    layout.set_width_height(width, height);
 
    let mut lines = vec![];
@@ -638,7 +630,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         }
        } else */
        {
-        cbs.last_entries.get(&x)
+        cbs.last_entries.get(x)
        }
       })
       .collect::<Vec<_>>();
@@ -724,7 +716,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
          self.prev_selected_text = Some(cbentry.text.clone());
         }
         selected_string = cbentry.text.clone();
-        line_count2.insert(appended_cbentry.line_count);
+        let _ = line_count2.insert(appended_cbentry.line_count);
        }
 
        {
@@ -760,7 +752,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       &self.scroller_second,
       &string_lines,
       self.wrapped,
-      &layout,
+      layout,
       |cursor_star, idx, numbers_width, entry| {
        format!("{} {:width$} : {}", cursor_star, idx, entry, width = numbers_width,)
       },
@@ -791,13 +783,15 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      hoffset_second: self.scroller_second.get_hoffset(),
     };
 
-    terminal.draw(|frame| frame.render_widget(sw, frame.area()));
+    terminal
+     .draw(|frame| frame.render_widget(sw, frame.area()))
+     .unwrap();
    }
   }
  }
 
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
-  let mut cbs = &mut assd.cbs;
+  let cbs = &mut assd.cbs;
 
   if let Some(mut regex_edit_mode) = self.regex_edit_mode.clone() {
    let regex = Regex::new(&regex_edit_mode);
@@ -823,11 +817,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Backspace)) => {
      regex_edit_mode.pop();
-     self.regex_edit_mode.insert(regex_edit_mode);
+     let _ = self.regex_edit_mode.insert(regex_edit_mode);
     }
     MyEvent::Termion(Event::Key(Key::Char(char))) => {
      regex_edit_mode.push(*char);
-     self.regex_edit_mode.insert(regex_edit_mode);
+     let _ = self.regex_edit_mode.insert(regex_edit_mode);
     }
     _ => {}
    }
@@ -915,6 +909,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
           }),
           Err(err) => {
            trace!("Failed to create editor page: {}", e);
+           trace!("Failed to create editor page: {}", err);
            trace!("Failed to open statusline heap: ");
           }
          }
@@ -934,15 +929,13 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
-      } else {
-       if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
-        self.delete_confirm_mode = Some(appended_cbentry.seq);
-       }
+      } else if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
+       self.delete_confirm_mode = Some(appended_cbentry.seq);
       }
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('p'))) => {
-     let _ = assd.sender.send(MyEvent::TogglePause);
+     assd.sender.send(MyEvent::TogglePause).unwrap();
     }
     MyEvent::TogglePauseResult(paused) => {
      self.paused = *paused;
@@ -1006,9 +999,12 @@ impl TermionScreenPainter for TermionScreenEditorPage {
 
    // suspend_raw_mode();
 
-   edit::edit_file(&self.tmpfile_path).ok();
+   if self.config.editor {
+    linuxeditor::edit_file(&self.tmpfile_path).unwrap();
+   } else {
+    edit::edit_file(&self.tmpfile_path).ok();
+   }
    // edit::edit_file(&self.tmpfile_path).unwrap();
-   // linuxeditor::edit_file( &self.tmpfile_path);
    // restore_raw_mode();
 
    if let Ok(new_text) = fs::read_to_string(&self.tmpfile_path) {
@@ -1022,7 +1018,7 @@ impl TermionScreenPainter for TermionScreenEditorPage {
   }
  }
 
- fn handle_event(&mut self, _evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
+ fn handle_event(&mut self, _evt: &MyEvent, _assd: &mut AppStateReceiverData) -> NextTsp {
   /*
   let edited_text = self.text.clone();
   let idx = self.index;
@@ -1081,10 +1077,10 @@ impl TermionScreenPainter for TermionScreenViewPage {
 
   let string_lines = self.text.lines().collect::<Vec<_>>();
 
-  let mut rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
+  let rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
 
   {
-   let (width, height) = termion::terminal_size().unwrap_or_else(|_| (80, 24));
+   let (width, height) = termion::terminal_size().unwrap_or((80, 24));
    layout.set_width_height(width, height);
 
    scroller.set_content_length(string_lines.len());
@@ -1123,7 +1119,9 @@ impl TermionScreenPainter for TermionScreenViewPage {
     hoffset_second: 0,
    };
 
-   terminal.draw(|frame| frame.render_widget(sw, frame.area()));
+   terminal
+    .draw(|frame| frame.render_widget(sw, frame.area()))
+    .unwrap();
   }
  }
 

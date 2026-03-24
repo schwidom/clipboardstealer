@@ -263,8 +263,6 @@ pub fn create_local_unix_epoch() -> DateTime<Local> {
  timestamp
 }
 
-use chrono::format::strftime;
-
 impl MyTime {
  pub fn unix_epoch() -> Self {
   Self {
@@ -293,16 +291,15 @@ impl MyTime {
 
 #[cfg(test)]
 mod tests {
- use chrono::format::strftime;
+ // use chrono::format::strftime;
  use chrono::{DateTime, Local};
- use serde::Serialize;
 
  use super::MyTime;
 
  #[test]
  fn test_001() {
-  let t = MyTime::now();
-  let s = t.to_string();
+  // let t = MyTime::now();
+  // let s = t.to_string();
   // panic!( "{s}"); // 2026-02-25 01:08:37.842114298 +01:00
   // let y = Local::from("2026-02-25 01:08:37.842114298 +01:00");
   // parse_from_rfc2822("Wed, 18 Feb 2015 23:16:09 GMT")

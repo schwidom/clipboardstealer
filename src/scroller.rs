@@ -22,6 +22,12 @@ pub struct Scroller {
 
 // gtewxxi8oh
 // TODO : in tools
+impl Default for Scroller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scroller {
  pub fn new() -> Self {
   Self {
@@ -90,7 +96,7 @@ impl Scroller {
      self.cursor = Some(0);
      self.windowposition = 0;
     }
-    return false;
+    false
    }
    Some(value) => {
     let newcursor = value + 1;
@@ -101,7 +107,7 @@ impl Scroller {
      self.windowposition += 1;
      return true;
     }
-    return false;
+    false
    }
   }
  }
@@ -183,7 +189,7 @@ impl Scroller {
       }
      }
     }
-    return false;
+    false
    }
    Some(value) => {
     if value == 0 {
@@ -191,10 +197,10 @@ impl Scroller {
       self.windowposition -= 1;
       return true;
      }
-     return false;
+     false
     } else {
      self.cursor = Some(value - 1);
-     return true;
+     true
     }
    }
   }

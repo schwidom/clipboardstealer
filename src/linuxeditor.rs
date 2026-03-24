@@ -1,14 +1,12 @@
 use std::env::var_os;
 use std::error::Error;
-use std::ffi::OsString;
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::stdout;
 use std::os::fd::AsFd;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use rustix::termios::{tcflush, QueueSelector};
-use termion::input::TermRead;
 
 pub(crate) fn edit_file(pb: &PathBuf) -> Result<(), Box<dyn Error>> {
  let mut editor: Option<PathBuf> = None;
@@ -28,7 +26,7 @@ pub(crate) fn edit_file(pb: &PathBuf) -> Result<(), Box<dyn Error>> {
   }
 
   Some(editor) => {
-   let status = Command::new(&editor)
+   let _status = Command::new(&editor)
     // .args(&args)
     .arg(pb)
     // .env_clear()

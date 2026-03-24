@@ -8,6 +8,12 @@ pub struct Layout {
  height: Option<u16>,
 }
 
+impl Default for Layout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Layout {
  pub fn new() -> Self {
   Self {
@@ -52,7 +58,6 @@ impl Layout {
   if z.len() >= width {
    return z.chars().take(width).collect();
   }
-  let padding = (width - z.len()) / 2;
   format!("{:^width$}", z)
  }
 

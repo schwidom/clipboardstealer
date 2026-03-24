@@ -1,33 +1,23 @@
-#![allow(dead_code)]
-#![allow(unused)]
+// #![allow(dead_code)]
+// #![allow(unused)]
 
 // extern crate clipboard;
 extern crate clap;
 extern crate termion;
 extern crate x11_clipboard;
 
-use ratatui::{self, DefaultTerminal, Terminal};
+use ratatui::{self, DefaultTerminal};
 
-use rustix::termios::{tcflush, QueueSelector};
 use termion::{
- clear::All,
  cursor::{Hide, Show},
  event::{Event, Key},
  input::TermRead,
  is_tty,
- raw::{IntoRawMode, RawTerminal},
- screen::IntoAlternateScreen,
 };
 
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
-use tracing_subscriber::util::SubscriberInitExt;
-use x11rb_protocol::protocol::{
- shape::Op,
- xproto::{AtomEnum, OpenFontRequest},
-};
-// use x11_clipboard::error::Error as X11Error;
 use xcb_1::{
  x::{KeyButMask, QueryPointer},
  ConnError, Connection,
@@ -39,9 +29,9 @@ use std::{
  collections::{BinaryHeap, HashMap, HashSet},
  env::var_os,
  ffi::OsString,
- fs::{read_to_string, OpenOptions},
+ fs::read_to_string,
  io::Write,
- os::{fd::AsFd, unix::fs::OpenOptionsExt},
+ os::fd::AsFd,
  path::Path,
  rc::Rc,
  sync::{
@@ -52,7 +42,6 @@ use std::{
  time::Duration,
 };
 
-use std::io::Stdout;
 use std::{
  io::{stdin, stdout},
  thread,
@@ -61,18 +50,17 @@ use std::{
 use crate::{
  clipboards::*,
  config::{sleep_default, Config},
- constants::{self, DISPLAY, EDITOR},
+ constants::{DISPLAY, EDITOR},
  debug::*,
  event::MyEvent,
  termionscreen::{TermionScreenFirstPage, TermionScreenPainter},
- tools::CB_ATOMS,
 };
 
 use nu_ansi_term::AnsiGenericString;
 
-use tracing::{event, info, span, trace, Level};
+use tracing::trace;
 
-use clap::{builder::IntoResettable, Parser};
+use clap::Parser;
 
 use std::sync::{
  atomic::{AtomicBool, Ordering},
@@ -80,7 +68,6 @@ use std::sync::{
 };
 
 use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
-use enum_iterator::all;
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
 // fn drain_stdin() { // works randomly
@@ -115,16 +102,18 @@ use enum_iterator::all;
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub struct Args {
- #[arg(long, default_value_t = false, help = "provides debug information")]
- pub(crate) debug: bool,
- #[arg(long, help = "writes debug information into file")]
- pub(crate) debugfile: Option<String>,
  #[arg(long, help = "appends clipboard information to file")]
  pub(crate) append_ndjson: Option<String>,
  #[arg(long, help = "reads clipboard information from file")]
  pub(crate) load_ndjson: Vec<String>,
  #[arg(long, help = "loads clipboard information from file and appends to it")]
  pub(crate) load_and_append_ndjson: Option<String>,
+ #[arg(long, help = "interprets the EDITOR environment variable always as editor")]
+ pub(crate) editor: bool,
+ #[arg(long, default_value_t = false, help = "provides debug information")]
+ pub(crate) debug: bool,
+ #[arg(long, help = "writes debug information into file")]
+ pub(crate) debugfile: Option<String>,
 }
 
 #[derive(Debug)]
@@ -152,12 +141,6 @@ impl From<ConnError> for CbsError {
   Self::ConnError(value)
  }
 }
-
-use x11_clipboard as x11;
-// use x11::xcb::Atom;
-use x11::Atom;
-
-// use crate::event::*;
 
 pub struct TicksThread {}
 
@@ -225,7 +208,7 @@ impl ClipboardThread {
       .collect();
 
      for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && cb_strings2[i] != None{
+      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && cb_strings2[i].is_some() {
        ass
         .sender
         .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
@@ -260,40 +243,26 @@ impl TermionLoop {
   // let stdout_raw = stdout().into_raw_mode();
 
   // self.stdout_raw.insert(stdout_raw.unwrap());
-  self.terminal.insert(ratatui::init());
+  let _ = self.terminal.insert(ratatui::init());
   // self.terminal.as_mut().unwrap().flush();
  }
 
  fn new() -> Self {
   let magic = "\x1b[?1l\x1b>"; // DECCKM off (normal arrows) + DECKPNM (normal keypad)
   println!("{}", magic);
-  // let stdout_raw = stdout().into_raw_mode();
-
-  // match stdout_raw {
-  //  Ok(stdout_raw) => {
-  //   return Self {
-  //    stdout_raw: Some(stdout_raw),
-  //   }
-  //  }
-  //  Err(err) => panic!("you are not on a terminal : {:?}", err), // TODO : linux tests
-  // }
   Self {
    terminal: Some(ratatui::init()),
   }
  }
 
  fn run_loop(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
-  let thread = thread::spawn(move || -> Result<(), CbsError> {
+  
+  thread::spawn(move || -> Result<(), CbsError> {
    loop {
     if ass.config.is_blocked_for_external_program() {
      sleep_default();
      continue;
     }
-    // for _ in 0..5 {
-    //  tcflush(stdout().as_fd(), QueueSelector::IOFlush).unwrap();
-    //  thread::sleep(Duration::from_millis(100)); // NOTE: the garbage events come after the sleep, no matter how long
-    //  drain_stdin();
-    // }
     {
      let stdin = stdin();
      let stdin_guard = stdin.lock();
@@ -318,33 +287,22 @@ impl TermionLoop {
     }
 
     // ass.config.wait_for_external_program(); // poacutopn4
+    if !ass.is_running() {
+     break;
+    }
    }
 
    Ok(())
-  });
-  thread
+  })
  }
 
  fn suspend_raw_mode(&mut self) {
-  // self
-  //  .stdout_raw
-  //  .as_mut()
-  //  .unwrap()
-  //  .suspend_raw_mode()
-  //  .unwrap();
-  // self.stdout_raw = None;
   self.terminal = None;
   ratatui::restore();
  }
 }
 
-// impl Drop for TermionLoop {
-//  fn drop(&mut self) {
-//   self.suspend_raw_mode();
-//  }
-// }
-
-/** sends SIGWINCH, SIGINT events to MyEventHandler*/
+/// sends SIGWINCH, SIGINT events to MyEventHandler
 struct MySignalsLoop {}
 
 impl MySignalsLoop {
@@ -353,8 +311,9 @@ impl MySignalsLoop {
  }
 
  fn run_thread(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
-  let mut signals = Signals::new(&[SIGWINCH, SIGINT]).unwrap();
-  let thread = thread::spawn(move || -> Result<(), CbsError> {
+  let mut signals = Signals::new([SIGWINCH, SIGINT]).unwrap();
+  
+  thread::spawn(move || -> Result<(), CbsError> {
    for signal in &mut signals {
     {
      ass.config.wait_for_external_program();
@@ -367,8 +326,7 @@ impl MySignalsLoop {
     sleep_default(); // cgyeofnrzk
    }
    Ok(())
-  });
-  thread
+  })
  }
 }
 
@@ -519,7 +477,7 @@ impl AppStateReceiverData {
   let mut statusline_heap = BinaryHeap::new();
   for load_ndjson in &config.load_ndjson {
    let p_load_ndjson = Path::new(load_ndjson);
-   /// no error message if the file don't already exist but is intended to get created
+   // no error message if the file don't already exist but is intended to get created
    if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson.as_ref() {
     continue;
    }
@@ -536,7 +494,7 @@ impl AppStateReceiverData {
      continue;
     }
    };
-   let mut deserializer = serde_json::Deserializer::from_str(&content);
+   let deserializer = serde_json::Deserializer::from_str(&content);
    let mut svec: Vec<CBEntry> = deserializer
     .into_iter::<CBEntry>()
     .map(|x| x.unwrap())
@@ -579,7 +537,7 @@ impl<'a> AppStateReceiver<'a> {
   receiver: Receiver<MyEvent>,
   sender: Sender<MyEvent>,
  ) -> Self {
-  let mut data = AppStateReceiverData::new(config, sender);
+  let data = AppStateReceiverData::new(config, sender);
   Self {
    running,
    paused,
@@ -601,9 +559,8 @@ impl<'a> AppStateReceiver<'a> {
  fn run_loop(&mut self) {
   // self.running.store(true, Ordering::Relaxed);
   assert!(self.is_running());
-  let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> = Rc::new(RefCell::new(
-   TermionScreenFirstPage::new(self.config, Rc::clone(&self.data.statusline_heap)),
-  ));
+  let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> =
+   Rc::new(RefCell::new(TermionScreenFirstPage::new(self.config)));
   let mut tsp_stack: Vec<Rc<RefCell<dyn TermionScreenPainter>>> = vec![];
 
   #[derive(Default)]
@@ -619,7 +576,7 @@ impl<'a> AppStateReceiver<'a> {
    fn update_clipboard(&mut self, cbs: &mut Clipboards) {
     if !self.mouse_button_1_is_pressed && !self.shift_is_pressed {
      if let Some((atom, string)) = &self.cb_changed {
-      cbs.insert(&atom, string.clone());
+      cbs.insert(atom, string.clone());
       self.cb_changed = None;
      }
     }
@@ -644,7 +601,7 @@ impl<'a> AppStateReceiver<'a> {
    if current_painter.is_external_program() {
     // panic!(); // kommt bei edit
     // poacutopn4
-    is_external_program.insert(self.config.block_threads_for_external_program()); // blocks threads
+    let _ = is_external_program.insert(self.config.block_threads_for_external_program()); // blocks threads
     print!("{}", Show); // doesn't get restored by ratatui::restore()
                         // self.data.tl.suspend_raw_mode();
                         // stdout().flush().unwrap();
@@ -654,7 +611,7 @@ impl<'a> AppStateReceiver<'a> {
 
    match &mut self.tl.terminal.as_mut() {
     Some(terminal) => {
-     current_painter.paint(&mut self.tl.terminal.as_mut().unwrap(), &mut self.data);
+     current_painter.paint(terminal, &mut self.data);
     }
     None => {
      current_painter.paint_without_terminal(&mut self.data);
@@ -676,12 +633,6 @@ impl<'a> AppStateReceiver<'a> {
 
     self.tl.create_raw_mode();
     print!("{}", Hide);
-
-    // for _ in 0..5 {
-    //  tcflush(stdout().as_fd(), QueueSelector::IOFlush).unwrap();
-    //  thread::sleep(Duration::from_millis(100)); // NOTE: the garbage events come after the sleep, no matter how long
-    //  drain_stdin();
-    // }
 
     // continues polling
     is_external_program = None;
@@ -799,7 +750,8 @@ impl<'a> AppStateReceiver<'a> {
        self
         .data
         .sender
-        .send(MyEvent::TogglePauseResult(self.is_paused()));
+        .send(MyEvent::TogglePauseResult(self.is_paused()))
+        .unwrap();
       }
       _ => {}
      }
@@ -829,9 +781,6 @@ impl<'a> AppStateReceiver<'a> {
 struct AppState<'a> {
  ass: AppStateSender<'a>,
  asr: AppStateReceiver<'a>,
- running: &'a AtomicBool,
- paused: &'a AtomicBool,
- config: &'static Config,
 }
 
 impl<'a> AppState<'a> {
@@ -842,9 +791,6 @@ impl<'a> AppState<'a> {
   Self {
    ass: AppStateSender::new(config, running, paused, sender.clone()),
    asr: AppStateReceiver::new(config, running, paused, receiver, sender),
-   running,
-   paused,
-   config,
   }
  }
 }
@@ -932,7 +878,7 @@ pub fn main() {
   monitor();
  }
 
- let mt = MouseThread::new(&config);
+ let mt = MouseThread::new(config);
  let mtjh = mt.run(&appstate.ass);
 
  if config.debug {
@@ -974,15 +920,15 @@ pub fn main() {
   monitor2("ctjh");
  }
 
- let _ = ttjh.join(); // needed
+ ttjh.join().unwrap().unwrap(); // needed
 
- let _ = ctjh.join(); // needed
+ ctjh.join().unwrap().unwrap(); // needed
 
  if config.debug {
   monitor2("mtjh");
  }
 
- let _ = mtjh.join(); // currently not needed, but possible, for the sake of tidyness
+ mtjh.join().unwrap().unwrap(); // currently not needed, but possible, for the sake of tidyness
 
  if config.debug {
   monitor2("end");
@@ -993,7 +939,7 @@ pub fn main() {
  // poacutopn4
  print!("{}", Show); // doesn't get restored by ratatui::restore()
                      // tl.suspend_raw_mode();
- &appstate.asr.tl.suspend_raw_mode();
+ appstate.asr.tl.suspend_raw_mode();
 
  // stdout().flush().unwrap();
  // ratatui::restore();

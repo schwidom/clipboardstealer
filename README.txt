@@ -1,4 +1,24 @@
-clipboardstealer [--debug] [--debugfile <DEBUGFILE>] [--append-ndjson <APPEND_NDJSON>] [--load-ndjson <LOAD_NDJSON> | ...] --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+
+Usage: clipboardstealer [OPTIONS]
+
+Options:
+      --append-ndjson <APPEND_NDJSON>
+          appends clipboard information to file
+      --load-ndjson <LOAD_NDJSON>
+          reads clipboard information from file
+      --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+          loads clipboard information from file and appends to it
+      --editor
+          interprets the EDITOR environment variable always as editor
+      --debug
+          provides debug information
+      --debugfile <DEBUGFILE>
+          writes debug information into file
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+
 
 Overview:
 

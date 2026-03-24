@@ -1,5 +1,5 @@
 // use std::borrow::Borrow; // TODO : why does this lead to an compiler error?
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -162,7 +162,7 @@ impl ClipboardReaderWriter {
    Ok(selection_u8) => {
     let mut echofree = self.echofree.lock().unwrap();
     let text: Option<String> = Some(String::from_utf8_lossy(selection_u8.as_slice()).into());
-    let echofree_bool = text.as_ref().map_or(false, |t| echofree.contains(t));
+    let echofree_bool = text.as_ref().is_some_and(|t| echofree.contains(t));
     trace!("crw_read text :{:?}", text);
     trace!("crw_read echofree :{:?}", self.echofree.lock().unwrap());
     if !echofree_bool
@@ -280,6 +280,12 @@ pub struct Clipboards {
  pub(crate) seq_counter: usize,
 }
 
+impl Default for Clipboards {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Clipboards {
  pub fn new() -> Self {
   let cfmap: HashMap<CBType, ClipboardFixation> = all::<CBType>()
@@ -304,7 +310,7 @@ impl Clipboards {
    let mut insert: bool = true;
 
    {
-    let cf: &ClipboardFixation = &self.cfmap[&cbtype];
+    let cf: &ClipboardFixation = &self.cfmap[cbtype];
 
     if let Some(fixation) = &cf.fixation {
      if fixation.cbentry.borrow().text == s {
@@ -320,7 +326,7 @@ impl Clipboards {
    }
 
    {
-    if let Some(appended_cbentry) = self.last_entries.get(&cbtype) {
+    if let Some(appended_cbentry) = self.last_entries.get(cbtype) {
      if appended_cbentry.cbentry.borrow().text == s {
       insert = false;
      }
@@ -394,7 +400,7 @@ impl Clipboards {
 
   let now = MyTime::now();
 
-  Ok(if let Some(ref mut fd) = self.append_file {
+  let _: () = if let Some(ref mut fd) = self.append_file {
    for cbentry in &mut self.cbentries {
     if cbentry.appended {
      break;
@@ -403,13 +409,14 @@ impl Clipboards {
      if span > TimeDelta::milliseconds(300) {
       let json_str = serde_json::to_string(&*cbentry.cbentry)
        .map_err(|e| format!("Serialization error: {}", e))?;
-      write!(fd, "{}\n", json_str).map_err(|e| format!("Write error: {}", e))?;
+      writeln!(fd, "{}", json_str).map_err(|e| format!("Write error: {}", e))?;
       cbentry.appended = true;
      }
     }
    }
    fd.flush().map_err(|e| format!("flush : {}", e))?
-  })
+  };
+  Ok(())
  }
 
  pub fn is_fixated(&self, cbentry: &Rc<RefCell<CBEntry>>) -> bool {
@@ -460,9 +467,9 @@ impl Clipboards {
   }
  }
 
- fn get_clipboard_contents_of_cbtype(&self, cbtype: &CBType) -> Option<Rc<RefCell<CBEntry>>> {
-  self.last_entries.get(cbtype).map(|x| x.cbentry.clone())
- }
+ // fn get_clipboard_contents_of_cbtype(&self, cbtype: &CBType) -> Option<Rc<RefCell<CBEntry>>> {
+ //  self.last_entries.get(cbtype).map(|x| x.cbentry.clone())
+ // }
 
  pub(crate) fn toggle_clipboards(&mut self) {
   let primary_content = self
@@ -507,7 +514,7 @@ impl Clipboards {
 mod tests {
  use super::ClipboardReaderWriter;
  use std::{
-  sync::{Arc, Mutex},
+  sync::Mutex,
   thread,
   time::{Duration, Instant},
  };

@@ -1,5 +1,5 @@
 use std::{thread, time::Duration};
-use tracing::{event, info, span, trace, Level};
+use tracing::trace;
 
 pub fn monitor() {
  trace!("1111111111111");
