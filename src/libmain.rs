@@ -108,7 +108,10 @@ pub struct Args {
  pub(crate) load_ndjson: Vec<String>,
  #[arg(long, help = "loads clipboard information from file and appends to it")]
  pub(crate) load_and_append_ndjson: Option<String>,
- #[arg(long, help = "interprets the EDITOR environment variable always as editor")]
+ #[arg(
+  long,
+  help = "interprets the EDITOR environment variable always as editor"
+ )]
  pub(crate) editor: bool,
  #[arg(long, default_value_t = false, help = "provides debug information")]
  pub(crate) debug: bool,
@@ -179,7 +182,7 @@ impl ClipboardThread {
   ass: &'static AppStateSender,
   cfmap: &HashMap<CBType, ClipboardFixation>,
  ) -> JoinHandle<Result<(), CbsError>> {
-  let echofree_vec: Vec<(CBType, Arc<Mutex<HashSet<String>>>)> = cfmap
+  let echofree_vec: Vec<(CBType, Arc<Mutex<HashSet<Vec<u8>>>>)> = cfmap
    .iter()
    .map(|(cbtype, cf)| (cbtype.clone(), cf.crw.echofree()))
    .collect();
@@ -187,7 +190,7 @@ impl ClipboardThread {
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
    let crws: Vec<ClipboardReaderWriter> = echofree_vec
     .iter()
-    .filter_map(|(cbtype, echofree): &(CBType, Arc<Mutex<HashSet<String>>>)| {
+    .filter_map(|(cbtype, echofree): &(CBType, Arc<Mutex<HashSet<Vec<u8>>>>)| {
      ClipboardReaderWriter::from_cbtype_with_echofree(cbtype, echofree.clone()).ok()
     })
     .collect();
@@ -256,7 +259,6 @@ impl TermionLoop {
  }
 
  fn run_loop(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
-  
   thread::spawn(move || -> Result<(), CbsError> {
    loop {
     if ass.config.is_blocked_for_external_program() {
@@ -302,7 +304,7 @@ impl TermionLoop {
  }
 }
 
-/// sends SIGWINCH, SIGINT events to MyEventHandler
+/// sends SIGWINCH, SIGINT events
 struct MySignalsLoop {}
 
 impl MySignalsLoop {
@@ -312,7 +314,7 @@ impl MySignalsLoop {
 
  fn run_thread(&mut self, ass: &'static AppStateSender) -> JoinHandle<Result<(), CbsError>> {
   let mut signals = Signals::new([SIGWINCH, SIGINT]).unwrap();
-  
+
   thread::spawn(move || -> Result<(), CbsError> {
    for signal in &mut signals {
     {
@@ -505,7 +507,7 @@ impl AppStateReceiverData {
    for cbentry in svec {
     cbs.cbentries.push_back(AppendedCBEntry {
      appended: true,
-     line_count: cbentry.text.lines().count(),
+     line_count: cbentry.as_string().lines().count(),
      cbentry: Rc::new(RefCell::new(cbentry)),
      seq: cbs.seq_counter,
     });
@@ -567,7 +569,7 @@ impl<'a> AppStateReceiver<'a> {
   struct EventState {
    mouse_button_1_is_pressed: bool,
    shift_is_pressed: bool,
-   cb_changed: Option<(CBType, Option<String>)>,
+   cb_changed: Option<(CBType, Option<Vec<u8>>)>,
   }
 
   let mut event_state = EventState::default();

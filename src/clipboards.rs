@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 // use std::borrow::Borrow; // TODO : why does this lead to an compiler error?
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -95,7 +96,8 @@ pub struct ClipboardReaderWriter {
  cb: Clipboard,
  atom: Atom,
  // atoms: Atoms,
- echofree: Arc<Mutex<HashSet<String>>>,
+ // echofree: Arc<Mutex<HashSet<String>>>,
+ echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
  echofree_read: AtomicBool,
 }
 
@@ -106,7 +108,7 @@ pub struct CrwReadInfo {
 }
 
 impl ClipboardReaderWriter {
- pub(crate) fn echofree(&self) -> Arc<Mutex<HashSet<String>>> {
+ pub(crate) fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>> {
   self.echofree.clone()
  }
 
@@ -122,7 +124,7 @@ impl ClipboardReaderWriter {
 
  pub(crate) fn from_cbtype_with_echofree(
   cbtype: &CBType,
-  echofree: Arc<Mutex<HashSet<String>>>,
+  echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
  ) -> Result<Self, CbsError> {
   let cb = Clipboard::new()?;
   Ok(Self {
@@ -152,7 +154,7 @@ impl ClipboardReaderWriter {
  // $ xclip -o -selection clipboard
  // clipboard
 
- pub fn crw_read(&self) -> Option<String> {
+ pub fn crw_read(&self) -> Option<Vec<u8>> {
   let selection = self.atom;
 
   match self
@@ -161,8 +163,8 @@ impl ClipboardReaderWriter {
   {
    Ok(selection_u8) => {
     let mut echofree = self.echofree.lock().unwrap();
-    let text: Option<String> = Some(String::from_utf8_lossy(selection_u8.as_slice()).into());
-    let echofree_bool = text.as_ref().is_some_and(|t| echofree.contains(t));
+    let text = selection_u8;
+    let echofree_bool = echofree.contains(&text);
     trace!("crw_read text :{:?}", text);
     trace!("crw_read echofree :{:?}", self.echofree.lock().unwrap());
     if !echofree_bool
@@ -179,7 +181,7 @@ impl ClipboardReaderWriter {
     if echofree_bool {
      None
     } else {
-     text
+     Some(text)
     }
    }
 
@@ -197,7 +199,7 @@ impl ClipboardReaderWriter {
    .map_or_else(|_| false, |_| true)
  }
 
- pub fn crw_write_echofree(&self, s: String) -> bool {
+ pub fn crw_write_echofree(&self, s: Vec<u8>) -> bool {
   let mut echofree = self.echofree.lock().unwrap();
   echofree.insert(s.clone());
   self
@@ -206,7 +208,7 @@ impl ClipboardReaderWriter {
   // let x = self.echofree.lock().unwrap().insert(s.clone());
   // trace!("crw_write_echofree :{:?}", self.echofree.lock().unwrap());
   trace!("crw_write_echofree :{:?}", echofree);
-  let value = s.as_bytes();
+  let value = s;
   let selection = self.atom;
 
   self
@@ -221,7 +223,7 @@ pub struct CBEntry {
  // see old Entry from entries.rs
  pub cbtype: CBType,
  pub timestamp: MyTime,
- pub text: String,
+ pub text: Vec<u8>,
 }
 
 impl CBEntry {
@@ -229,6 +231,11 @@ impl CBEntry {
   let ret = format!("{}", self.timestamp);
   // 2025-02-24 20:25:40+01:00
   ret[0..19].into() // 2025-02-24 20:25:40
+ }
+
+ pub fn as_string(&self) -> Cow<'_, str> {
+  // besser Vec<u8> in einem CBEText unterbringen, ggf. mit einem String Cow oder gleich einem String // u79a6domic
+  String::from_utf8_lossy(&self.text)
  }
 }
 pub(crate) struct ClipboardFixation {
@@ -281,9 +288,9 @@ pub struct Clipboards {
 }
 
 impl Default for Clipboards {
-    fn default() -> Self {
-        Self::new()
-    }
+ fn default() -> Self {
+  Self::new()
+ }
 }
 
 impl Clipboards {
@@ -305,7 +312,7 @@ impl Clipboards {
   }
  }
 
- pub(crate) fn insert(&mut self, cbtype: &CBType, string: Option<String>) {
+ pub(crate) fn insert(&mut self, cbtype: &CBType, string: Option<Vec<u8>>) {
   if let Some(s) = string {
    let mut insert: bool = true;
 
@@ -345,12 +352,13 @@ impl Clipboards {
     if should_pop_front {
      self.cbentries.pop_front();
     }
-    let cbentry = Rc::new(RefCell::new(CBEntry {
+    let cbentry = CBEntry {
      cbtype: cbtype.clone(),
      timestamp: now,
      text: s.clone(),
-    }));
-    let line_count = s.lines().count();
+    };
+    let line_count = cbentry.as_string().lines().count();
+    let cbentry = Rc::new(RefCell::new(cbentry));
     let seq = self.seq_counter;
     self.cbentries.push_front(AppendedCBEntry {
      appended: false,

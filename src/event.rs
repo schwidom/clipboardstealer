@@ -26,7 +26,7 @@ pub enum MyEvent {
  // CbInsertedSecondary,
  // CbInsertedClipboard,
  Unused,
- CbChanged(CBType, Option<String>),
+ CbChanged(CBType, Option<Vec<u8>>),
  Tick,
  TogglePause,
  TogglePauseResult(bool),

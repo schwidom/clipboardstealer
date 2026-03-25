@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 
-use std::fs::{self, File};
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
 use std::rc::Rc;
@@ -17,7 +17,7 @@ use crate::event::MyEvent;
 use crate::layout::Layout;
 use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLayoutTB};
 // use crate::libmain::SyncStuff;
-use crate::libmain::{AppStateReceiverData, StatusMessage};
+use crate::libmain::{AppStateReceiverData, StatusMessage, StatusSeverity};
 use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
@@ -38,7 +38,7 @@ use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk // extends char by width, width_cjk
 
 use regex::Regex;
-use std::io::Write; // write_all
+use std::io::{Read, Write}; // write_all
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ActiveArea {
@@ -136,7 +136,6 @@ fn trim_text_to_rect_with(text: &str, rect: ratatui::layout::Rect) -> String {
   .map(|x| truncate_before_or_at_display_width(x, max_width))
   .collect::<Vec<_>>();
 
- 
  // trace!("trim_text_to_rect_with: ret {:?}", ret);
  trimmed.join("\n")
 }
@@ -226,7 +225,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
  where
   Self: Sized,
  {
-  assert_eq!(area, buf.area);
+  // assert_eq!(area, buf.area); // this is only in the rootwidget, buf.area is always the root area
   let is_main_active = self.active_area == ActiveArea::Main;
 
   let regex_count_indicator =
@@ -255,7 +254,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
-  let safe_area = rect1.intersection(buf.area); // avoids crash
+  let safe_area = rect1.intersection(area); // avoids crash
 
   let all_lines = self.all_lines;
   let all_lines = tabfix(all_lines);
@@ -304,7 +303,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
-   let safe_area2 = rect2.intersection(buf.area); // avoids crash
+   let safe_area2 = rect2.intersection(area); // avoids crash
 
    let all_lines2 = self.all_lines2;
    let all_lines2 = tabfix(all_lines2);
@@ -322,17 +321,17 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
   }
-  // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(buf.area), buf);
+  // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(area), buf);
   let statusline = self.statusline_heap.borrow();
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
-    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+    .render(self.rv.pl.get_status_area().intersection(area), buf);
   } else if self.delete_confirm_mode.is_some() {
    Paragraph::new("delete entry? (y/n) (Esc)")
-    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+    .render(self.rv.pl.get_status_area().intersection(area), buf);
   } else if let Some(status_msg) = statusline.peek() {
    Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()) + " (Esc)")
-    .render(self.rv.pl.get_status_area().intersection(buf.area), buf);
+    .render(self.rv.pl.get_status_area().intersection(area), buf);
   }
  }
 }
@@ -466,7 +465,7 @@ pub struct TermionScreenFirstPage {
  active_area: ActiveArea,
  main_width: usize,
  second_width: usize,
- prev_selected_text: Option<String>,
+ prev_selected_text: Option<Vec<u8>>,
 }
 
 enum FilteredCbsEntries {
@@ -511,7 +510,7 @@ impl TermionScreenFirstPage {
   let max_line_width = entries
    .iter()
    .map(|e| match e {
-    FilteredCbsEntries::ACE(a) => a.cbentry.borrow().text.width(),
+    FilteredCbsEntries::ACE(a) => a.cbentry.borrow().as_string().width(),
     _ => 0,
    })
    .max()
@@ -525,18 +524,11 @@ impl TermionScreenFirstPage {
    .iter()
    .filter_map(|e| match e {
     FilteredCbsEntries::ACE(a) => {
-     if a.cbentry.borrow().text.contains('\n') {
-      Some(
-       a.cbentry
-        .borrow()
-        .text
-        .lines()
-        .map(|l| l.width())
-        .max()
-        .unwrap_or(0),
-      )
+     let text = a.cbentry.borrow().as_string().into_owned();
+     if text.contains('\n') {
+      Some(text.lines().map(|l| l.width()).max().unwrap_or(0))
      } else {
-      Some(a.cbentry.borrow().text.width())
+      Some(text.width())
      }
     }
     _ => None,
@@ -601,7 +593,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let mut r = self.regex.clone();
       r.extend(self.regex_edit_mode_last_working.iter().cloned());
       for r in r {
-       if !r.is_match(&line.cbentry.borrow().text) {
+       if !r.is_match(&line.cbentry.borrow().as_string()) {
         res = false;
         break;
        }
@@ -660,7 +652,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     let entries = &self.regex_filtered_cbs_entries;
 
-    let mut selected_string = String::new();
+    let mut selected_string = Vec::<u8>::new();
     let mut line_count2 = None;
 
     if self.config.debug {
@@ -727,7 +719,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
          idx + self.scroller_main.get_windowposition(), // mqbojcmkot
          cbentry.cbtype.get_info(),
          cbentry.get_date_time(),
-         cbentry.text,
+         cbentry.as_string(),
          width = numbers_width,
         );
         lines.push(layout.fixline(&s002));
@@ -745,7 +737,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     let all_lines = lines.join("\n");
 
     let all_lines2 = {
-     let string_lines: Vec<&str> = selected_string.lines().collect();
+     let string_lines: Vec<String> = String::from_utf8_lossy(&selected_string) // u79a6domic
+      .lines()
+      .map(|x| x.to_string())
+      .collect();
      self.scroller_second.set_content_length(string_lines.len());
 
      render_scroller_lines(
@@ -853,7 +848,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
       self.config,
       "help".to_string(),
-      config::USAGE.to_string(),
+      config::USAGE.to_string().as_bytes().into(),
      ))));
     }
     MyEvent::Termion(Event::Key(Key::Char('f'))) => {
@@ -896,7 +891,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
        match TermionScreenEditorPage::new(
         self.config,
-        appended_cbentry.cbentry.borrow().text.clone(),
+        appended_cbentry.cbentry.borrow().as_string().into_owned(),
         cursor,
        ) {
         Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
@@ -1007,14 +1002,29 @@ impl TermionScreenPainter for TermionScreenEditorPage {
    // edit::edit_file(&self.tmpfile_path).unwrap();
    // restore_raw_mode();
 
-   if let Ok(new_text) = fs::read_to_string(&self.tmpfile_path) {
-    let idx = self.index;
-
-    if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
-     entry.line_count = new_text.lines().count();
-     entry.cbentry.borrow_mut().text = new_text.clone();
+   match OpenOptions::new().read(true).open(&self.tmpfile_path) {
+    Ok(mut fh) => {
+     let mut buf = Vec::new();
+     match fh.read_to_end(&mut buf) {
+      Ok(_) => {
+       let idx = self.index;
+       if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
+        entry.line_count = String::from_utf8_lossy(&buf).lines().count();
+        entry.cbentry.borrow_mut().text = buf;
+       }
+      }
+      Err(err) => assd.statusline_heap.borrow_mut().push(StatusMessage {
+       severity: StatusSeverity::Error,
+       text: err.to_string(),
+      }),
+     };
+     
     }
-   }
+    Err(err) => assd.statusline_heap.borrow_mut().push(StatusMessage {
+     severity: StatusSeverity::Error,
+     text: err.to_string(),
+    }),
+   };
   }
  }
 
@@ -1044,12 +1054,12 @@ pub struct TermionScreenViewPage {
  main_title: String,
  scroller: Scroller,
  layout: Layout,
- text: String,
+ text: Vec<u8>,
  wrapped: bool,
 }
 
 impl TermionScreenViewPage {
- fn new(config: &'static Config, main_title: String, text: String) -> Self
+ fn new(config: &'static Config, main_title: String, text: Vec<u8>) -> Self
  where
   Self: Sized,
  {
@@ -1064,7 +1074,11 @@ impl TermionScreenViewPage {
  }
 
  fn get_max_hoffset(&self) -> usize {
-  let max_line_width = self.text.lines().map(|l| l.width()).max().unwrap_or(0);
+  let max_line_width = String::from_utf8_lossy(&self.text)
+   .lines()
+   .map(|l| l.width())
+   .max()
+   .unwrap_or(0);
   let window_width = 80;
   max_line_width.saturating_sub(window_width / 2)
  }
@@ -1075,7 +1089,10 @@ impl TermionScreenPainter for TermionScreenViewPage {
   let scroller = &mut self.scroller;
   let layout = &mut self.layout;
 
-  let string_lines = self.text.lines().collect::<Vec<_>>();
+  let string_lines : Vec<String> = String::from_utf8_lossy(&self.text)
+   .lines()
+   .map(|x| x.to_string())
+   .collect::<Vec<_>>();
 
   let rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
 
