@@ -229,12 +229,37 @@ pub mod cbentry {
 
  #[derive(Debug, Clone, Serialize, Deserialize)]
  pub struct CBEntry {
-  // see old Entry from entries.rs
   cbtype: CBType,
   timestamp: MyTime,
   data: Vec<u8>,
   #[serde(skip)]
   text: OnceCell<Vec<String>>,
+ }
+
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct CBEntryString {
+  cbtype: CBType,
+  timestamp: MyTime,
+  data: String,
+ }
+
+ impl CBEntry {
+  pub fn as_json_entry(&self) -> CBEntryString {
+   CBEntryString {
+    cbtype: self.cbtype.clone(),
+    timestamp: self.timestamp.clone(),
+    data: self.as_string().into_owned(),
+   }
+  }
+
+  pub fn from_json_entry(json_entry: CBEntryString) -> Self {
+   Self {
+    cbtype: json_entry.cbtype.clone(),
+    timestamp: json_entry.timestamp.clone(),
+    data: json_entry.data.into_bytes(),
+    text: OnceCell::default(),
+   }
+  }
  }
 
  impl CBEntry {
@@ -326,7 +351,8 @@ impl ClipboardFixation {
 
 #[derive(Clone, Debug)]
 pub struct AppendedCBEntry {
- pub appended: bool,
+ pub appended_bin: bool,
+ pub appended_string: bool,
  pub cbentry: Rc<RefCell<CBEntry>>,
  pub seq: usize,
 }
@@ -344,8 +370,10 @@ pub struct Clipboards {
  // pub cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
  // pub cfmap: HashMap<String, ClipboardFixation>,
  pub(crate) cfmap: HashMap<CBType, ClipboardFixation>,
- append_file: Option<File>,
- append_file_error_reported: bool,
+ append_file_bin: Option<File>,
+ append_file_bin_error_reported: bool,
+ append_file_string: Option<File>,
+ append_file_string_error_reported: bool,
  pub(crate) seq_counter: usize,
 }
 
@@ -368,8 +396,10 @@ impl Clipboards {
    cbentries: VecDeque::new(),
    last_entries: HashMap::new(),
    cfmap,
-   append_file: None,
-   append_file_error_reported: false,
+   append_file_bin: None,
+   append_file_bin_error_reported: false,
+   append_file_string: None,
+   append_file_string_error_reported: false,
    seq_counter: 0,
   }
  }
@@ -420,7 +450,8 @@ impl Clipboards {
     let cbentry = Rc::new(RefCell::new(cbentry));
     let seq = self.seq_counter;
     self.cbentries.push_front(AppendedCBEntry {
-     appended: false,
+     appended_bin: false,
+     appended_string: false,
      cbentry: cbentry.clone(), // (now, s.clone())
      seq,
     });
@@ -428,7 +459,8 @@ impl Clipboards {
     self.last_entries.insert(
      cbentry.borrow().get_cbtype(),
      AppendedCBEntry {
-      appended: false,
+      appended_bin: false,
+      appended_string: false,
       cbentry: cbentry.clone(),
       seq,
      },
@@ -442,32 +474,32 @@ impl Clipboards {
   &self.cbentries
  }
 
- pub(crate) fn append_ndjson(&mut self, append_ndjson_filename: &str) -> Result<(), String> {
-  if self.append_file.is_none() && !self.append_file_error_reported {
+ pub(crate) fn append_ndjson_bin(&mut self, append_filename_string: &str) -> Result<(), String> {
+  if self.append_file_bin.is_none() && !self.append_file_bin_error_reported {
    match OpenOptions::new()
     .create(true)
     .append(true)
-    .open(Path::new(append_ndjson_filename))
+    .open(Path::new(append_filename_string))
    {
     Ok(file) => {
-     self.append_file = Some(file);
+     self.append_file_bin = Some(file);
     }
     Err(e) => {
-     self.append_file_error_reported = true;
-     return Err(format!("Failed to open append file: {:?} - {}", append_ndjson_filename, e));
+     self.append_file_bin_error_reported = true;
+     return Err(format!("Failed to open append bin file: {:?} - {}", append_filename_string, e));
     }
    }
   }
 
-  if self.append_file_error_reported {
+  if self.append_file_bin_error_reported {
    return Ok(());
   }
 
   let now = MyTime::now();
 
-  let _: () = if let Some(ref mut fd) = self.append_file {
+  let _: () = if let Some(ref mut fd) = self.append_file_bin {
    for cbentry in &mut self.cbentries {
-    if cbentry.appended {
+    if cbentry.appended_bin {
      break;
     } else {
      let span = now.timestamp - cbentry.cbentry.borrow().get_timestamp().timestamp;
@@ -475,7 +507,53 @@ impl Clipboards {
       let json_str = serde_json::to_string(&*cbentry.cbentry)
        .map_err(|e| format!("Serialization error: {}", e))?;
       writeln!(fd, "{}", json_str).map_err(|e| format!("Write error: {}", e))?;
-      cbentry.appended = true;
+      cbentry.appended_bin = true;
+     }
+    }
+   }
+   fd.flush().map_err(|e| format!("flush : {}", e))?
+  };
+  Ok(())
+ }
+
+ pub fn append_ndjson_string(&mut self, append_filename_string: &str) -> Result<(), String> {
+  if self.append_file_string.is_none() && !self.append_file_string_error_reported {
+   match OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(Path::new(append_filename_string))
+   {
+    Ok(file) => {
+     self.append_file_string = Some(file);
+    }
+    Err(e) => {
+     self.append_file_string_error_reported = true;
+     return Err(format!(
+      "Failed to open append string file: {:?} - {}",
+      append_filename_string, e
+     ));
+    }
+   }
+  }
+
+  if self.append_file_string_error_reported {
+   return Ok(());
+  }
+
+  let now = MyTime::now();
+
+  let _: () = if let Some(ref mut fd) = self.append_file_string {
+   for cbentry in &mut self.cbentries {
+    if cbentry.appended_string {
+     break;
+    } else {
+     let span = now.timestamp - cbentry.cbentry.borrow().get_timestamp().timestamp;
+     if span > TimeDelta::milliseconds(300) {
+      let json_entry = cbentry.cbentry.borrow().as_json_entry();
+      let json_str =
+       serde_json::to_string(&json_entry).map_err(|e| format!("Serialization error: {}", e))?;
+      writeln!(fd, "{}", json_str).map_err(|e| format!("Write error: {}", e))?;
+      cbentry.appended_string = true;
      }
     }
    }

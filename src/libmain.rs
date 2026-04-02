@@ -67,8 +67,9 @@ use std::sync::{
  Arc, Mutex,
 };
 
-use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
 use crate::clipboards::cbentry::CBEntry;
+use crate::clipboards::cbentry::CBEntryString;
+use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
 // fn drain_stdin() { // works randomly
@@ -104,10 +105,25 @@ use crate::clipboards::cbentry::CBEntry;
 #[command(version, about)]
 pub struct Args {
  #[arg(long, help = "appends clipboard information to file")]
- pub(crate) append_ndjson: Option<String>,
+ pub(crate) append_ndjson_bin: Option<String>,
  #[arg(long, help = "reads clipboard information from file")]
- pub(crate) load_ndjson: Vec<String>,
+ pub(crate) load_ndjson_bin: Vec<String>,
  #[arg(long, help = "loads clipboard information from file and appends to it")]
+ pub(crate) load_and_append_ndjson_bin: Option<String>,
+ #[arg(
+  long,
+  help = "appends clipboard information to file (JSON String format)"
+ )]
+ pub(crate) append_ndjson: Option<String>,
+ #[arg(
+  long,
+  help = "reads clipboard information from file (JSON String format)"
+ )]
+ pub(crate) load_ndjson: Vec<String>,
+ #[arg(
+  long,
+  help = "loads clipboard information from file and appends to it (JSON String format)"
+ )]
  pub(crate) load_and_append_ndjson: Option<String>,
  #[arg(
   long,
@@ -478,10 +494,10 @@ impl AppStateReceiverData {
  pub fn new(config: &'static Config, sender: Sender<MyEvent>) -> Self {
   let mut cbs = Clipboards::new();
   let mut statusline_heap = BinaryHeap::new();
-  for load_ndjson in &config.load_ndjson {
+  for load_ndjson in &config.load_ndjson_bin {
    let p_load_ndjson = Path::new(load_ndjson);
    // no error message if the file don't already exist but is intended to get created
-   if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson.as_ref() {
+   if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson_bin.as_ref() {
     continue;
    }
    let content = read_to_string(p_load_ndjson);
@@ -507,7 +523,46 @@ impl AppStateReceiverData {
 
    for cbentry in svec {
     cbs.cbentries.push_back(AppendedCBEntry {
-     appended: true,
+     appended_bin: true,
+     appended_string: true,
+     cbentry: Rc::new(RefCell::new(cbentry)),
+     seq: cbs.seq_counter,
+    });
+    cbs.seq_counter += 1;
+   }
+  }
+  for load_ndjson in &config.load_ndjson_string {
+   let p_load_ndjson = Path::new(load_ndjson);
+   // no error message if the file don't already exist but is intended to get created
+   if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson_string.as_ref() {
+    continue;
+   }
+   let content = read_to_string(p_load_ndjson);
+   let content = match content {
+    Ok(content) => content,
+    Err(err) => {
+     let err_msg = format!("Failed to open load ndjson file: {:?} - {}", p_load_ndjson, err);
+     eprintln!("{}", err_msg);
+     statusline_heap.push(StatusMessage {
+      severity: StatusSeverity::Warning,
+      text: err_msg,
+     });
+     continue;
+    }
+   };
+   let deserializer = serde_json::Deserializer::from_str(&content);
+   let mut svec: Vec<CBEntryString> = deserializer
+    .into_iter::<CBEntryString>()
+    .map(|x| x.unwrap())
+    .collect::<Vec<_>>();
+
+   svec.reverse();
+
+   for json_entry in svec {
+    let cbentry = CBEntry::from_json_entry(json_entry);
+    cbs.cbentries.push_back(AppendedCBEntry {
+     appended_bin: true,
+     appended_string: true,
      cbentry: Rc::new(RefCell::new(cbentry)),
      seq: cbs.seq_counter,
     });
@@ -737,8 +792,16 @@ impl<'a> AppStateReceiver<'a> {
       }
 
       MyEvent::Tick => {
-       if let Some(append_ndjson_filename) = &self.config.append_ndjson {
-        if let Err(err_msg) = self.data.cbs.append_ndjson(append_ndjson_filename) {
+       if let Some(append_filename_string) = &self.config.append_ndjson_bin {
+        if let Err(err_msg) = self.data.cbs.append_ndjson_bin(append_filename_string) {
+         self.data.statusline_heap.borrow_mut().push(StatusMessage {
+          severity: StatusSeverity::Error,
+          text: err_msg,
+         });
+        }
+       }
+       if let Some(append_filename_string) = &self.config.append_ndjson_string {
+        if let Err(err_msg) = self.data.cbs.append_ndjson_string(append_filename_string) {
          self.data.statusline_heap.borrow_mut().push(StatusMessage {
           severity: StatusSeverity::Error,
           text: err_msg,
@@ -800,7 +863,7 @@ impl<'a> AppState<'a> {
 pub fn main() {
  let args = Args::parse();
  // q3jhk95ow6
- if args.load_and_append_ndjson.is_some() && args.append_ndjson.is_some() {
+ if args.load_and_append_ndjson_bin.is_some() && args.append_ndjson_bin.is_some() {
   eprintln!("Error: --load-and-append-ndjson cannot be used together with --append-ndjson");
   std::process::exit(1);
  }

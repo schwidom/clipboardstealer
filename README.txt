@@ -2,12 +2,19 @@
 Usage: clipboardstealer [OPTIONS]
 
 Options:
-      --append-ndjson <APPEND_NDJSON>
+
+      --append-ndjson-bin <APPEND_NDJSON_BIN>
           appends clipboard information to file
-      --load-ndjson <LOAD_NDJSON>
+      --load-ndjson-bin <LOAD_NDJSON_BIN>
           reads clipboard information from file
-      --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+      --load-and-append-ndjson-bin <LOAD_AND_APPEND_NDJSON_BIN>
           loads clipboard information from file and appends to it
+      --append-ndjson <APPEND_NDJSON>
+          appends clipboard information to file (JSON String format)
+      --load-ndjson <LOAD_NDJSON>
+          reads clipboard information from file (JSON String format)
+      --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+          loads clipboard information from file and appends to it (JSON String format)
       --editor
           interprets the EDITOR environment variable always as editor
       --debug
@@ -18,7 +25,6 @@ Options:
           Print help
   -V, --version
           Print version
-
 
 Overview:
 

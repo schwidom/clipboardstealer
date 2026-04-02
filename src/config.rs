@@ -19,12 +19,18 @@ clipboardstealer version {}
 Usage: clipboardstealer [OPTIONS]
 
 Options:
-      --append-ndjson <APPEND_NDJSON>
+      --append-ndjson-bin <APPEND_NDJSON_BIN>
           appends clipboard information to file
-      --load-ndjson <LOAD_NDJSON>
+      --load-ndjson-bin <LOAD_NDJSON_BIN>
           reads clipboard information from file
-      --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+      --load-and-append-ndjson-bin <LOAD_AND_APPEND_NDJSON_BIN>
           loads clipboard information from file and appends to it
+      --append-ndjson <APPEND_NDJSON>
+          appends clipboard information to file (JSON String format)
+      --load-ndjson <LOAD_NDJSON>
+          reads clipboard information from file (JSON String format)
+      --load-and-append-ndjson <LOAD_AND_APPEND_NDJSON>
+          loads clipboard information from file and appends to it (JSON String format)
       --editor
           interprets the EDITOR environment variable always as editor
       --debug
@@ -106,8 +112,10 @@ pub fn sleep_default() {
 pub struct Config {
  pub debug: bool,
  pub debugfile: Option<String>,
- pub append_ndjson: Option<String>,
- pub load_ndjson: Vec<String>,
+ pub append_ndjson_bin: Option<String>,
+ pub load_ndjson_bin: Vec<String>,
+ pub append_ndjson_string: Option<String>,
+ pub load_ndjson_string: Vec<String>,
  pub editor: bool,
  pub suspend_threads: RwLock<()>,
  pub suspended_threads: AtomicBool,
@@ -125,7 +133,6 @@ impl Config {
    if let Some(df) = args.debugfile.clone() {
     let file = OpenOptions::new()
      .create(true)
-     
      .append(true)
      .open(df)
      .expect("Failed to open log file");
@@ -138,7 +145,15 @@ impl Config {
   }
 
   // q3jhk95ow6
-  let (append_ndjson, load_ndjson) = if let Some(file) = &args.load_and_append_ndjson {
+  let (append_ndjson_bin, load_ndjson_bin) = if let Some(file) = &args.load_and_append_ndjson_bin {
+   let mut loads = args.load_ndjson_bin.clone();
+   loads.push(file.clone());
+   (Some(file.clone()), loads)
+  } else {
+   (args.append_ndjson_bin.clone(), args.load_ndjson_bin.clone())
+  };
+
+  let (append_ndjson_string, load_ndjson_string) = if let Some(file) = &args.load_and_append_ndjson {
    let mut loads = args.load_ndjson.clone();
    loads.push(file.clone());
    (Some(file.clone()), loads)
@@ -149,9 +164,11 @@ impl Config {
   Self {
    debug: args.debug,
    debugfile: args.debugfile.clone(),
-   append_ndjson,
-   load_ndjson,
-   editor : args.editor,
+   append_ndjson_bin,
+   load_ndjson_bin,
+   append_ndjson_string,
+   load_ndjson_string,
+   editor: args.editor,
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
   }
