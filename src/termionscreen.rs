@@ -333,13 +333,6 @@ impl RatatuiVariables {
  }
 }
 
-/// R for refactor
-enum R<'a> {
- Old(&'a str),
- VS(&'a [&'a str]),
- VS2(&'a [String]),
-}
-
 /// the TwoScreenDefaultWidget paints in the areas of the
 /// rv.pl (RatatuiVariables . PagerLayout)
 
@@ -348,8 +341,8 @@ struct TwoScreenDefaultWidget<'a> {
  main_title: &'a str,
  second_title: &'a str,
  rv: &'a RatatuiVariables,
- all_lines: R<'a>,
- all_lines2: R<'a>,
+ all_lines: &'a [String],
+ all_lines2: &'a [String],
  wrapped1: bool,
  wrapped2: bool,
  regex_edit_mode: Option<String>,
@@ -401,41 +394,19 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(area); // avoids crash
 
-  let all_lines = match self.all_lines {
-   R::Old(al) => {
-    let all_lines = tabfix(al);
-
+  let all_lines = self
+   .all_lines
+   .iter()
+   .map(|x| {
+    let x = tabfix(x);
     if self.wrapped1 {
-     all_lines
+     x
     } else {
-     apply_hoffset_and_trim(&all_lines, safe_area, self.hoffset_main)
+     apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string()
     }
-   }
-   R::VS(vs) => vs
-    .iter()
-    .map(|x| {
-     let x = tabfix(x);
-     if self.wrapped1 {
-      x
-     } else {
-      apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string()
-     }
-    })
-    .collect::<Vec<_>>()
-    .join("\n"),
-   R::VS2(vs2) => vs2
-    .iter()
-    .map(|x| {
-     let x = tabfix(x);
-     if self.wrapped1 {
-      x
-     } else {
-      apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string()
-     }
-    })
-    .collect::<Vec<_>>()
-    .join("\n"),
-  };
+   })
+   .collect::<Vec<_>>()
+   .join("\n");
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
 
@@ -478,41 +449,19 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(area); // avoids crash
 
-   let all_lines2 = match self.all_lines2 {
-    R::Old(al) => {
-     let all_lines2 = tabfix(al);
-
+   let all_lines2 = self
+    .all_lines2
+    .iter()
+    .map(|x| {
+     let x = tabfix(x);
      if self.wrapped2 {
-      all_lines2
+      x
      } else {
-      apply_hoffset_and_trim(&all_lines2, safe_area2, self.hoffset_second)
+      apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string()
      }
-    }
-    R::VS(vs) => vs
-     .iter()
-     .map(|x| {
-      let x = tabfix(x);
-      if self.wrapped2 {
-       x
-      } else {
-       apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string()
-      }
-     })
-     .collect::<Vec<_>>()
-     .join("\n"),
-    R::VS2(vs2) => vs2
-     .iter()
-     .map(|x| {
-      let x = tabfix(x);
-      if self.wrapped2 {
-       x
-      } else {
-       apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string()
-      }
-     })
-     .collect::<Vec<_>>()
-     .join("\n"),
-   };
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
 
@@ -959,8 +908,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      second_title: "selected content",
      rv,
      // tsfp: &self,
-     all_lines: R::VS2(&all_lines),
-     all_lines2: R::VS2(&all_lines2),
+     all_lines: &all_lines,
+     all_lines2: &all_lines2,
      wrapped1: false,
      wrapped2: self.wrapped,
      regex_edit_mode: self.regex_edit_mode.clone(),
@@ -1333,8 +1282,8 @@ impl TermionScreenPainter for TermionScreenViewPage {
     second_title: "unused",
     rv: &rv,
     // all_lines: R::Old(&all_lines),
-    all_lines: R::VS2(all_lines.as_ref()),
-    all_lines2: R::Old("unused"),
+    all_lines: all_lines.as_ref(),
+    all_lines2: &vec![],
     wrapped1: self.wrapped,
     wrapped2: false,
     regex_edit_mode: None,
