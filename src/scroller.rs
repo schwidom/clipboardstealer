@@ -1,4 +1,4 @@
-use std::{cmp::min, ops::Range};
+use std::{cmp::{max, min}, ops::Range};
 
 #[derive(Debug)]
 pub struct Scroller {
@@ -263,10 +263,12 @@ impl Scroller {
   self.cursorfix();
  }
 
+ #[allow(unused)] // used in tests
  pub(crate) fn get_content_length(&self) -> usize {
   self.contentlength
  }
 
+ #[allow(unused)] // used in tests
  pub(crate) fn get_windowlength(&self) -> usize {
   self.windowlength
  }
@@ -278,6 +280,7 @@ impl Scroller {
   self.hwindowlength = len;
  }
 
+ #[allow(unused)] // maybe for tests
  pub(crate) fn get_hwindowlength(&self) -> usize {
   self.hwindowlength
  }
@@ -286,17 +289,13 @@ impl Scroller {
   self.hoffset
  }
 
- pub(crate) fn set_hoffset(&mut self, offset: usize) {
-  self.hoffset = offset;
- }
-
  pub(crate) fn scroll_left(&mut self) {
-  let step = self.hwindowlength.saturating_div(2);
+  let step = max( 1, self.hwindowlength / 2);
   self.hoffset = self.hoffset.saturating_sub(step);
  }
 
  pub(crate) fn scroll_right(&mut self) {
-  let step = self.hwindowlength / 2;
+  let step = max( 1, self.hwindowlength / 2);
   self.hoffset = (self.hoffset + step).min(self.max_hoffset);
  }
 
@@ -304,15 +303,7 @@ impl Scroller {
   self.hoffset = 0;
  }
 
- pub(crate) fn scroll_to_end(&mut self) {
-  self.hoffset = self.max_hoffset;
- }
-
-//  pub(crate) fn scroll_right_to_end(&mut self) {
-//   self.hoffset = self.hwindowlength * 2;
-//  }
-
- pub(crate) fn scroll_right_to_end_with_max(&mut self) {
+ pub(crate) fn scroll_right_to_end(&mut self) {
   self.hoffset = self.max_hoffset;
  }
 

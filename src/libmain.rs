@@ -68,6 +68,7 @@ use std::sync::{
 };
 
 use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
+use crate::clipboards::cbentry::CBEntry;
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
 // fn drain_stdin() { // works randomly
@@ -507,7 +508,6 @@ impl AppStateReceiverData {
    for cbentry in svec {
     cbs.cbentries.push_back(AppendedCBEntry {
      appended: true,
-     line_count: cbentry.as_string().lines().count(),
      cbentry: Rc::new(RefCell::new(cbentry)),
      seq: cbs.seq_counter,
     });

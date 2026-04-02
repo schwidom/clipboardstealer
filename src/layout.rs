@@ -1,11 +1,13 @@
 use std::cmp::min;
 
+use ratatui::layout::Rect;
+
 use crate::tools::flatline;
 
 pub struct Layout {
- current_line: u16,
- width: Option<u16>,
- height: Option<u16>,
+ // current_line: u16,
+ pub width: Option<u16>,
+ pub height: Option<u16>,
 }
 
 impl Default for Layout {
@@ -17,24 +19,29 @@ impl Default for Layout {
 impl Layout {
  pub fn new() -> Self {
   Self {
-   current_line: 1,
+   // current_line: 1,
    width: None,
    height: None,
   }
  }
 
- pub fn reset_current_line(&mut self) {
-  self.current_line = 1;
+ // pub(crate) fn reset_current_line(&mut self) {
+ //  self.current_line = 1;
+ // }
+
+ // pub(crate) fn set_width_height(&mut self, width: u16, height: u16) {
+ //  self.width = Some(width);
+ //  self.height = Some(height);
+ // }
+
+ pub(crate) fn set_width_height_from_rect(&mut self, rect : Rect){
+  self.width = Some(rect.width);
+  self.height = Some(rect.height);
  }
 
- pub fn set_width_height(&mut self, width: u16, height: u16) {
-  self.width = Some(width);
-  self.height = Some(height);
- }
-
- pub fn get_current_line(&self) -> u16 {
-  self.current_line
- }
+ // pub(crate) fn get_current_line(&self) -> u16 {
+ //  self.current_line
+ // }
 
  pub fn fixline(&self, string: &str) -> String {
   let z = flatline(string); // lcibiwnao0

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 // use std::borrow::Borrow; // TODO : why does this lead to an compiler error?
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -36,6 +35,8 @@ use crate::libmain::CbsError;
 // use crate::tools::cb_get_atoms;
 use crate::tools::MyTime;
 use crate::tools::CB_ATOMS;
+
+use cbentry::CBEntry;
 
 // impl From<X11Error> for MyError {
 //  fn from(value: X11Error) -> Self {
@@ -218,24 +219,86 @@ impl ClipboardReaderWriter {
  }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CBEntry {
- // see old Entry from entries.rs
- pub cbtype: CBType,
- pub timestamp: MyTime,
- pub text: Vec<u8>,
-}
+pub mod cbentry {
+ use super::CBType;
+ use super::MyTime;
+ use serde::Deserialize;
+ use serde::Serialize;
+ use std::borrow::Cow;
+ use std::cell::OnceCell;
 
-impl CBEntry {
- pub fn get_date_time(&self) -> String {
-  let ret = format!("{}", self.timestamp);
-  // 2025-02-24 20:25:40+01:00
-  ret[0..19].into() // 2025-02-24 20:25:40
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct CBEntry {
+  // see old Entry from entries.rs
+  cbtype: CBType,
+  timestamp: MyTime,
+  data: Vec<u8>,
+  #[serde(skip)]
+  text: OnceCell<Vec<String>>,
  }
 
- pub fn as_string(&self) -> Cow<'_, str> {
-  // besser Vec<u8> in einem CBEText unterbringen, ggf. mit einem String Cow oder gleich einem String // u79a6domic
-  String::from_utf8_lossy(&self.text)
+ impl CBEntry {
+  pub fn new(data: &[u8]) -> Self {
+   Self {
+    cbtype: CBType::Clipboard,
+    timestamp: MyTime::now(),
+    data: Vec::from(data),
+    text: OnceCell::default(),
+   }
+  }
+
+  pub fn get_date_time(&self) -> String {
+   let ret = format!("{}", self.timestamp);
+   // 2025-02-24 20:25:40+01:00
+   ret[0..19].into() // 2025-02-24 20:25:40
+  }
+
+  pub fn get_cbtype(&self) -> CBType {
+   self.cbtype.clone()
+  }
+
+  pub fn get_timestamp(&self) -> MyTime {
+   self.timestamp.clone()
+  }
+
+  pub fn get_data(&self) -> &Vec<u8> {
+   &self.data
+  }
+
+  pub fn set_data(&mut self, data: &[u8]) {
+   self.data = Vec::from(data);
+   self.text = OnceCell::default();
+  }
+  pub fn as_string(&self) -> Cow<'_, str> {
+   // besser Vec<u8> in einem CBEText unterbringen, ggf. mit einem String Cow oder gleich einem String // u79a6domic
+   // dann ist aber CBEntry wieder inkompatibel zum append speicherformat
+   String::from_utf8_lossy(&self.data)
+  }
+
+  pub fn get_text(&self) -> &Vec<String> {
+   self.text.get_or_init(|| {
+    self
+     .as_string()
+     .lines()
+     .map(|x| x.to_string())
+     .collect::<Vec<String>>()
+   })
+  }
+
+  pub fn swap_data(&mut self, other: &mut Self) {
+   std::mem::swap(&mut self.data, &mut other.data);
+   self.text = OnceCell::default();
+   other.text = OnceCell::default();
+  }
+
+  pub fn from_cbtype_timestamp_data(cbtype: &CBType, timestamp: &MyTime, data: &[u8]) -> Self {
+   Self {
+    cbtype: cbtype.clone(),
+    timestamp: timestamp.clone(),
+    data: Vec::from(data),
+    text: OnceCell::default(),
+   }
+  }
  }
 }
 pub(crate) struct ClipboardFixation {
@@ -256,7 +319,7 @@ impl ClipboardFixation {
   if let Some(fixation) = &self.fixation {
    self
     .crw
-    .crw_write_echofree(fixation.cbentry.borrow().text.clone());
+    .crw_write_echofree(fixation.cbentry.borrow().get_data().clone());
   }
  }
 }
@@ -264,7 +327,6 @@ impl ClipboardFixation {
 #[derive(Clone, Debug)]
 pub struct AppendedCBEntry {
  pub appended: bool,
- pub line_count: usize,
  pub cbentry: Rc<RefCell<CBEntry>>,
  pub seq: usize,
 }
@@ -320,7 +382,7 @@ impl Clipboards {
     let cf: &ClipboardFixation = &self.cfmap[cbtype];
 
     if let Some(fixation) = &cf.fixation {
-     if fixation.cbentry.borrow().text == s {
+     if fixation.cbentry.borrow().get_data() == &s {
       insert = false;
      } else {
       sleep_default();
@@ -334,7 +396,7 @@ impl Clipboards {
 
    {
     if let Some(appended_cbentry) = self.last_entries.get(cbtype) {
-     if appended_cbentry.cbentry.borrow().text == s {
+     if appended_cbentry.cbentry.borrow().get_data() == &s {
       insert = false;
      }
     }
@@ -343,35 +405,30 @@ impl Clipboards {
    if insert {
     let now = MyTime::now();
     let should_pop_front = if let Some(last) = self.cbentries.front() {
-     let last_time = &last.cbentry.borrow().timestamp;
+     let last_time = &last.cbentry.borrow().get_timestamp();
      let span = now.timestamp - last_time.timestamp;
-     cbtype == &last.cbentry.borrow().cbtype && span < TimeDelta::milliseconds(300)
+     cbtype == &last.cbentry.borrow().get_cbtype() && span < TimeDelta::milliseconds(300)
     } else {
      false
     };
     if should_pop_front {
      self.cbentries.pop_front();
     }
-    let cbentry = CBEntry {
-     cbtype: cbtype.clone(),
-     timestamp: now,
-     text: s.clone(),
-    };
-    let line_count = cbentry.as_string().lines().count();
+
+    let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
+
     let cbentry = Rc::new(RefCell::new(cbentry));
     let seq = self.seq_counter;
     self.cbentries.push_front(AppendedCBEntry {
      appended: false,
-     line_count,
      cbentry: cbentry.clone(), // (now, s.clone())
      seq,
     });
     // self.last_entries.get_mut(&cbentry.borrow().cbtype) = cbentry;
     self.last_entries.insert(
-     cbentry.borrow().cbtype.clone(),
+     cbentry.borrow().get_cbtype(),
      AppendedCBEntry {
       appended: false,
-      line_count,
       cbentry: cbentry.clone(),
       seq,
      },
@@ -413,7 +470,7 @@ impl Clipboards {
     if cbentry.appended {
      break;
     } else {
-     let span = now.timestamp - cbentry.cbentry.borrow().timestamp.timestamp;
+     let span = now.timestamp - cbentry.cbentry.borrow().get_timestamp().timestamp;
      if span > TimeDelta::milliseconds(300) {
       let json_str = serde_json::to_string(&*cbentry.cbentry)
        .map_err(|e| format!("Serialization error: {}", e))?;
@@ -441,10 +498,10 @@ impl Clipboards {
 
  pub(crate) fn toggle_fixation(&mut self, appended_cbentry: &AppendedCBEntry) {
   let cbentry = &appended_cbentry.cbentry;
-  let cf = match self.cfmap.get_mut(&cbentry.borrow().cbtype) {
+  let cf = match self.cfmap.get_mut(&cbentry.borrow().get_cbtype()) {
    Some(cf) => cf,
    None => {
-    trace!("toggle_selection: cbtype not found in cfmap {:?}", &cbentry.borrow().cbtype);
+    trace!("toggle_selection: cbtype not found in cfmap {:?}", &cbentry.borrow().get_cbtype());
     return;
    }
   };
@@ -463,7 +520,7 @@ impl Clipboards {
    cf.restore();
    self
     .last_entries
-    .insert(appended_cbentry.cbentry.borrow().cbtype.clone(), appended_cbentry.clone());
+    .insert(appended_cbentry.cbentry.borrow().get_cbtype(), appended_cbentry.clone());
   } else {
    cf.fixation = None
   }
@@ -480,11 +537,11 @@ impl Clipboards {
  // }
 
  pub(crate) fn toggle_clipboards(&mut self) {
-  let primary_content = self
+  let primary_content: Option<Rc<RefCell<CBEntry>>> = self
    .last_entries
    .get(&CBType::Primary)
    .map(|x| Rc::clone(&x.cbentry));
-  let clipboard_content = self
+  let clipboard_content: Option<Rc<RefCell<CBEntry>>> = self
    .last_entries
    .get(&CBType::Clipboard)
    .map(|x| Rc::clone(&x.cbentry));
@@ -496,16 +553,24 @@ impl Clipboards {
    }
   };
 
-  if primary_content.borrow().text == clipboard_content.borrow().text {
+  if primary_content.borrow().get_data() == clipboard_content.borrow().get_data() {
    return;
   }
 
   {
-   let (pc, cc) = (primary_content.borrow().text.clone(), clipboard_content.borrow().text.clone());
-   primary_content.borrow_mut().text = cc.clone();
-   clipboard_content.borrow_mut().text = pc.clone();
-   self.cfmap[&CBType::Primary].crw.crw_write_echofree(cc);
-   self.cfmap[&CBType::Clipboard].crw.crw_write_echofree(pc);
+   primary_content
+    .borrow_mut()
+    .swap_data(&mut clipboard_content.borrow_mut());
+   // std::mem::swap(&mut primary_content.borrow_mut().data, &mut clipboard_content.borrow_mut().data);
+   // std::mem::swap(&mut primary_content.borrow_mut().text, &mut clipboard_content.borrow_mut().text);
+
+   // TODO : crw_write_echofree(&) // avoid clone
+   self.cfmap[&CBType::Primary]
+    .crw
+    .crw_write_echofree(primary_content.borrow().get_data().clone());
+   self.cfmap[&CBType::Clipboard]
+    .crw
+    .crw_write_echofree(clipboard_content.borrow().get_data().clone());
   }
  }
 

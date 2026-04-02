@@ -41,7 +41,7 @@ impl Pager {
     scroller.scroll_right();
    }
    MyEvent::Termion(Event::Key(Key::ShiftRight)) => {
-    scroller.scroll_right_to_end_with_max();
+    scroller.scroll_right_to_end();
    }
    _ => {}
   }

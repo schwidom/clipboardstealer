@@ -1,0 +1,3 @@
+termionscreen.rs, in paint:
+   // let (width, height) = termion::terminal_size().unwrap_or((80, 24));
+   // layout.set_width_height(width, height);
