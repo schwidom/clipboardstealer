@@ -240,7 +240,7 @@ pub mod cbentry {
  pub struct CBEntryString {
   cbtype: CBType,
   timestamp: MyTime,
-  data: String,
+  text: String,
  }
 
  impl CBEntry {
@@ -248,7 +248,7 @@ pub mod cbentry {
    CBEntryString {
     cbtype: self.cbtype.clone(),
     timestamp: self.timestamp.clone(),
-    data: self.as_string().into_owned(),
+    text: self.as_string().into_owned(),
    }
   }
 
@@ -256,7 +256,7 @@ pub mod cbentry {
    Self {
     cbtype: json_entry.cbtype.clone(),
     timestamp: json_entry.timestamp.clone(),
-    data: json_entry.data.into_bytes(),
+    data: json_entry.text.into_bytes(),
     text: OnceCell::default(),
    }
   }
