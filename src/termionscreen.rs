@@ -1053,6 +1053,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         cbs.toggle_fixation(&(*appended_cbentry).clone());
        }
       }
+      self.needs_refilter = true;
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('t'))) => {
