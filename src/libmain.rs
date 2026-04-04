@@ -69,7 +69,7 @@ use std::sync::{
 
 use crate::clipboards::cbentry::CBEntry;
 use crate::clipboards::cbentry::CBEntryString;
-use crate::clipboards::{AcbeId, CBType, ClipboardFixation, ClipboardReaderWriter};
+use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
 // fn drain_stdin() { // works randomly
@@ -134,6 +134,14 @@ pub struct Args {
  pub(crate) debug: bool,
  #[arg(long, help = "writes debug information into file")]
  pub(crate) debugfile: Option<String>,
+ #[arg(long, help = "converts bin ndjson to string ndjson (input file)")]
+ pub(crate) convert_bin_ndjson: Option<String>,
+ #[arg(long, help = "output file for converted bin ndjson")]
+ pub(crate) to_string_ndjson: Option<String>,
+ #[arg(long, help = "converts string ndjson to bin ndjson (input file)")]
+ pub(crate) convert_string_ndjson: Option<String>,
+ #[arg(long, help = "output file for converted string ndjson")]
+ pub(crate) to_bin_ndjson: Option<String>,
 }
 
 #[derive(Debug)]
@@ -522,13 +530,7 @@ impl AppStateReceiverData {
    svec.reverse();
 
    for cbentry in svec {
-    cbs.cbentries.push_back(AppendedCBEntry {
-     appended_bin: true,
-     appended_string: true,
-     cbentry: Rc::new(RefCell::new(cbentry)),
-     id: AcbeId::new(cbs.seq_counter),
-    });
-    cbs.seq_counter += 1;
+    cbs.push_back(cbentry);
    }
   }
   for load_ndjson in &config.load_ndjson_string {
@@ -558,15 +560,9 @@ impl AppStateReceiverData {
 
    svec.reverse();
 
-   for json_entry in svec {
-    let cbentry = CBEntry::from_json_entry(json_entry);
-    cbs.cbentries.push_back(AppendedCBEntry {
-     appended_bin: true,
-     appended_string: true,
-     cbentry: Rc::new(RefCell::new(cbentry)),
-     id: AcbeId::new(cbs.seq_counter),
-    });
-    cbs.seq_counter += 1;
+   for string_entry in svec {
+    let cbentry = CBEntry::from_json_entry(string_entry);
+    cbs.push_back(cbentry);
    }
   }
   Self {
@@ -906,6 +902,55 @@ pub fn main() {
   if delay > 0 {
    thread::sleep(Duration::from_millis(min(5000, 1000 * delay)));
   }
+ }
+
+ // Handle conversion options before creating Config
+ if let (Some(input), Some(output)) = (&args.convert_bin_ndjson, &args.to_string_ndjson) {
+  if input == output {
+   eprintln!("Error: input and output files must be different");
+   std::process::exit(1);
+  }
+  if let Err(e) = crate::log_conversion::convert_bin_to_string(input, output) {
+   eprintln!("Conversion failed: {}", e);
+   std::process::exit(1);
+  }
+  return;
+ }
+
+ if let (Some(input), Some(output)) = (&args.convert_string_ndjson, &args.to_bin_ndjson) {
+  if input == output {
+   eprintln!("Error: input and output files must be different");
+   std::process::exit(1);
+  }
+  if let Err(e) = crate::log_conversion::convert_string_to_bin(input, output) {
+   eprintln!("Conversion failed: {}", e);
+   std::process::exit(1);
+  }
+  return;
+ }
+
+ if let (Some(input), Some(output)) = (&args.convert_bin_ndjson, &args.to_bin_ndjson) {
+  if input == output {
+   eprintln!("Error: input and output files must be different");
+   std::process::exit(1);
+  }
+  if let Err(e) = crate::log_conversion::copy_bin(input, output) {
+   eprintln!("Copy failed: {}", e);
+   std::process::exit(1);
+  }
+  return;
+ }
+
+ if let (Some(input), Some(output)) = (&args.convert_string_ndjson, &args.to_string_ndjson) {
+  if input == output {
+   eprintln!("Error: input and output files must be different");
+   std::process::exit(1);
+  }
+  if let Err(e) = crate::log_conversion::copy_string(input, output) {
+   eprintln!("Copy failed: {}", e);
+   std::process::exit(1);
+  }
+  return;
  }
 
  let config = Box::leak(Box::new(Config::from_args(&args)));

@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
+// use std::ops::AddAssign;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
@@ -368,7 +369,22 @@ impl AcbeId {
  pub fn as_usize(self) -> usize {
   self.0
  }
+
+ pub fn inc(&mut self) {
+  self.0 += 1;
+ }
 }
+
+// impl AddAssign for AcbeId {
+//  fn add_assign(&mut self, rhs: Self) {
+//   self.0 = rhs.0;
+//  }
+// }
+
+// #[cfg(test)]
+// mod tests2
+// {
+// }
 
 #[derive(Clone, Debug)]
 pub struct AppendedCBEntry {
@@ -382,8 +398,9 @@ pub struct AppendedCBEntry {
 pub struct Clipboards {
  // pub hm: HashMap<String, ClipboardSelectionList>,
  // pub crw: ClipboardReaderWriter,
- pub cbentries: VecDeque<AppendedCBEntry>,
- pub last_entries: HashMap<CBType, AppendedCBEntry>,
+ cbentries: VecDeque<AppendedCBEntry>,
+ last_entries: HashMap<CBType, AppendedCBEntry>,
+ entry_by_id: HashMap<AcbeId, Rc<RefCell<CBEntry>>>,
  // NOTE : no weak pointer here, Optional<Rc> is better,
  // even if entry disappears from the list (currently not possible but maybe later)
  // it can still be selected
@@ -395,7 +412,7 @@ pub struct Clipboards {
  append_file_bin_error_reported: bool,
  append_file_string: Option<File>,
  append_file_string_error_reported: bool,
- pub(crate) seq_counter: usize,
+ seq_counter: AcbeId,
 }
 
 impl Default for Clipboards {
@@ -416,12 +433,13 @@ impl Clipboards {
   Self {
    cbentries: VecDeque::new(),
    last_entries: HashMap::new(),
+   entry_by_id: HashMap::new(),
    cfmap,
    append_file_bin: None,
    append_file_bin_error_reported: false,
    append_file_string: None,
    append_file_string_error_reported: false,
-   seq_counter: 0,
+   seq_counter: AcbeId(0),
   }
  }
 
@@ -469,7 +487,7 @@ impl Clipboards {
     let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
 
     let cbentry = Rc::new(RefCell::new(cbentry));
-    let id = AcbeId(self.seq_counter);
+    let id = self.seq_counter;
     self.cbentries.push_front(AppendedCBEntry {
      appended_bin: false,
      appended_string: false,
@@ -486,13 +504,22 @@ impl Clipboards {
       id,
      },
     );
-    self.seq_counter += 1;
+    assert!(self.entry_by_id.insert(id, cbentry.clone()).is_none());
+    self.seq_counter.inc();
    }
   }
  }
 
  pub fn get_entries(&self) -> &VecDeque<AppendedCBEntry> {
   &self.cbentries
+ }
+
+ pub fn get_entry_by_id(&self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
+  self.entry_by_id.get(&id).cloned()
+ }
+
+ pub fn get_entry_by_id_mut(&mut self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
+  self.entry_by_id.get(&id).cloned()
  }
 
  pub(crate) fn append_ndjson_bin(&mut self, append_filename_string: &str) -> Result<(), String> {
@@ -675,10 +702,37 @@ impl Clipboards {
 
  pub(crate) fn remove_by_seq(&mut self, id: AcbeId) -> Option<AppendedCBEntry> {
   if let Some(pos) = self.cbentries.iter().position(|e| e.id == id) {
+   self.entry_by_id.remove(&id);
    self.cbentries.remove(pos)
   } else {
    None
   }
+ }
+
+ pub fn get_cbentries(&self) -> &VecDeque<AppendedCBEntry> {
+  &self.cbentries
+ }
+
+ // never!
+ //  pub fn get_cbentries_mut(&mut self) -> &mut VecDeque<AppendedCBEntry> {
+ //   &mut self.cbentries
+ //  }
+
+ pub(crate) fn push_back(&mut self, cbentry: CBEntry) {
+  let cbentry = Rc::new(RefCell::new(cbentry));
+  let id = self.seq_counter;
+  self.cbentries.push_back(AppendedCBEntry {
+   appended_bin: true,
+   appended_string: true,
+   cbentry: Rc::clone(&cbentry),
+   id,
+  });
+  assert!(self.entry_by_id.insert(id, cbentry).is_none());
+  self.seq_counter.inc();
+ }
+
+ pub(crate) fn get_last_entries(&self) -> &HashMap<CBType, AppendedCBEntry> {
+  &self.last_entries
  }
 }
 

@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{BinaryHeap, VecDeque};
 
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -618,7 +618,6 @@ pub struct TermionScreenFirstPage {
  prev_selected_text: Option<Vec<u8>>,
  needs_refilter: bool,
  last_entry_count: usize,
- entry_by_id: HashMap<AcbeId, Rc<RefCell<CBEntry>>>,
 }
 
 enum FilteredCbsEntries {
@@ -650,7 +649,6 @@ impl TermionScreenFirstPage {
    prev_selected_text: None,
    needs_refilter: true,
    last_entry_count: 0,
-   entry_by_id: HashMap::new(),
   }
  }
 
@@ -667,12 +665,6 @@ impl TermionScreenFirstPage {
   }
   trace!("update_filtered_entries");
   let entries = cbs.get_entries();
-
-  // Build index for O(1) lookups
-  self.entry_by_id.clear();
-  for entry in entries.iter() {
-   self.entry_by_id.insert(entry.id, Rc::clone(&entry.cbentry));
-  }
 
   // gtewxxi8oh
   let filtered_entries = entries
@@ -700,7 +692,7 @@ impl TermionScreenFirstPage {
    let cbtype_enum_vector: Vec<CBType> = all::<CBType>().collect::<Vec<_>>();
    let mut last_entries = cbtype_enum_vector
     .iter()
-    .map(|x| cbs.last_entries.get(x))
+    .map(|x| cbs.get_last_entries().get(x))
     .collect::<Vec<_>>();
 
    last_entries.sort_by(|a, b| match (a, b) {
@@ -730,13 +722,13 @@ impl TermionScreenFirstPage {
   self.needs_refilter = false;
  }
 
- fn get_max_hoffset_main(&self) -> usize {
+ fn get_max_hoffset_main(&self, cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     match &entries[cursor] {
      FilteredCbsEntries::ACE(id) => {
-      if let Some(cbentry) = self.entry_by_id.get(id) {
+      if let Some(cbentry) = cbs.get_entry_by_id(*id) {
        return tabfix(&flatline(&cbentry.borrow().as_string())).width();
       }
      }
@@ -747,13 +739,13 @@ impl TermionScreenFirstPage {
   0
  }
 
- fn get_max_hoffset_second(&self) -> usize {
+ fn get_max_hoffset_second(&self, cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     match &entries[cursor] {
      FilteredCbsEntries::ACE(id) => {
-      if let Some(cbentry) = self.entry_by_id.get(id) {
+      if let Some(cbentry) = cbs.get_entry_by_id(*id) {
        if let Some(cursor_second) = self.scroller_second.get_cursor_in_array() {
         let cbentry_borrowed = cbentry.borrow();
         let lines = cbentry_borrowed.get_text();
@@ -864,7 +856,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     {
      match entry {
       FilteredCbsEntries::ACE(id) => {
-       let appended_cbentry = cbs.cbentries.iter().find(|e| e.id == *id);
+       let appended_cbentry = cbs.get_cbentries().iter().find(|e| e.id == *id);
        if let Some(appended_cbentry) = appended_cbentry {
         let cbentry = &appended_cbentry.cbentry;
         let is_cursor = match self.scroller_main.get_cursor() {
@@ -1049,7 +1041,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
-       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+       if let Some(appended_cbentry) = cbs.get_cbentries().iter().find(|e| e.id == *id) {
         cbs.toggle_fixation(&(*appended_cbentry).clone());
        }
       }
@@ -1063,7 +1055,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
-       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+       if let Some(appended_cbentry) = cbs.get_cbentries().iter().find(|e| e.id == *id) {
         return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
          self.config,
          "view entry".to_string(),
@@ -1079,7 +1071,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       // let entry = &entries[cursor];
 
       if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
-       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+       if let Some(appended_cbentry) = cbs.get_cbentries().iter().find(|e| e.id == *id) {
         match TermionScreenEditorPage::new(
          self.config,
          appended_cbentry.cbentry.borrow().as_string().into_owned(),
@@ -1134,8 +1126,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     _ => {
      // TODO : optimize
      let max_offset = match self.active_area {
-      ActiveArea::Main => self.get_max_hoffset_main(),
-      ActiveArea::Second => self.get_max_hoffset_second(),
+      ActiveArea::Main => self.get_max_hoffset_main(cbs),
+      ActiveArea::Second => self.get_max_hoffset_second(cbs),
      };
 
      let scroller = self.get_active_scroller();
@@ -1201,8 +1193,11 @@ impl TermionScreenPainter for TermionScreenEditorPage {
      match fh.read_to_end(&mut buf) {
       Ok(_) => {
        let entry_id = self.entry_id;
-       if let Some(entry) = assd.cbs.cbentries.iter_mut().find(|e| e.id == entry_id) {
-        entry.cbentry.borrow_mut().set_data(&buf);
+       //  if let Some(entry) = assd.cbs.get_cbentries().iter_mut().find(|e| e.id == entry_id) {
+       //   entry.cbentry.borrow_mut().set_data(&buf);
+       //  }
+       if let Some(entry) = assd.cbs.get_entry_by_id(entry_id) {
+        entry.borrow_mut().set_data(&buf);
        }
       }
       Err(err) => assd.statusline_heap.borrow_mut().push(StatusMessage {

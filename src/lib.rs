@@ -7,6 +7,7 @@ pub mod layout;
 pub mod layout_ratatui;
 pub mod libmain;
 pub mod linuxeditor;
+pub mod log_conversion;
 pub mod pager;
 pub mod scroller;
 pub mod termionscreen;
