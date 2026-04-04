@@ -1,4 +1,7 @@
-use std::{cmp::{max, min}, ops::Range};
+use std::{
+ cmp::{max, min},
+ ops::Range,
+};
 
 #[derive(Debug)]
 pub struct Scroller {
@@ -23,9 +26,9 @@ pub struct Scroller {
 // gtewxxi8oh
 // TODO : in tools
 impl Default for Scroller {
-    fn default() -> Self {
-        Self::new()
-    }
+ fn default() -> Self {
+  Self::new()
+ }
 }
 
 impl Scroller {
@@ -290,12 +293,12 @@ impl Scroller {
  }
 
  pub(crate) fn scroll_left(&mut self) {
-  let step = max( 1, self.hwindowlength / 2);
+  let step = max(1, self.hwindowlength / 2);
   self.hoffset = self.hoffset.saturating_sub(step);
  }
 
  pub(crate) fn scroll_right(&mut self) {
-  let step = max( 1, self.hwindowlength / 2);
+  let step = max(1, self.hwindowlength / 2);
   self.hoffset = (self.hoffset + step).min(self.max_hoffset);
  }
 

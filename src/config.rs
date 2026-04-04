@@ -153,7 +153,8 @@ impl Config {
    (args.append_ndjson_bin.clone(), args.load_ndjson_bin.clone())
   };
 
-  let (append_ndjson_string, load_ndjson_string) = if let Some(file) = &args.load_and_append_ndjson {
+  let (append_ndjson_string, load_ndjson_string) = if let Some(file) = &args.load_and_append_ndjson
+  {
    let mut loads = args.load_ndjson.clone();
    loads.push(file.clone());
    (Some(file.clone()), loads)

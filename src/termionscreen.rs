@@ -3,14 +3,14 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
 use std::rc::Rc;
 
-use crate::clipboards::{cbentry::CBEntry, AppendedCBEntry, CBType};
+use crate::clipboards::{cbentry::CBEntry, AcbeId, CBType};
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -350,7 +350,7 @@ struct TwoScreenDefaultWidget<'a> {
  regex_count: usize,
  line_count: usize,
  line_count2: Option<usize>,
- delete_confirm_mode: Option<usize>,
+ delete_confirm_mode: Option<AcbeId>,
  statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
  paused: bool,
  active_area: ActiveArea,
@@ -611,15 +611,18 @@ pub struct TermionScreenFirstPage {
  regex_edit_mode_last_working: Option<Regex>,
  regex: Vec<Regex>,
  regex_filtered_cbs_entries: VecDeque<FilteredCbsEntries>,
- delete_confirm_mode: Option<usize>,
+ delete_confirm_mode: Option<AcbeId>,
  active_area: ActiveArea,
  main_width: usize,
  second_width: usize,
  prev_selected_text: Option<Vec<u8>>,
+ needs_refilter: bool,
+ last_entry_count: usize,
+ entry_by_id: HashMap<AcbeId, Rc<RefCell<CBEntry>>>,
 }
 
 enum FilteredCbsEntries {
- ACE(AppendedCBEntry),
+ ACE(AcbeId),
  Line,
  Empty,
 }
@@ -645,6 +648,9 @@ impl TermionScreenFirstPage {
    main_width: 80,
    second_width: 80,
    prev_selected_text: None,
+   needs_refilter: true,
+   last_entry_count: 0,
+   entry_by_id: HashMap::new(),
   }
  }
 
@@ -655,39 +661,114 @@ impl TermionScreenFirstPage {
   self.flipstate = (self.flipstate + 2) % 3;
  }
 
- fn get_max_hoffset_main(&self) -> usize {
-  let entries = &self.regex_filtered_cbs_entries;
-  let max_line_width = entries
+ fn update_filtered_entries(&mut self, cbs: &mut crate::clipboards::Clipboards) {
+  if !self.needs_refilter {
+   return;
+  }
+  trace!("update_filtered_entries");
+  let entries = cbs.get_entries();
+
+  // Build index for O(1) lookups
+  self.entry_by_id.clear();
+  for entry in entries.iter() {
+   self.entry_by_id.insert(entry.id, Rc::clone(&entry.cbentry));
+  }
+
+  // gtewxxi8oh
+  let filtered_entries = entries
    .iter()
-   .map(|e| match e {
-    FilteredCbsEntries::ACE(a) => a.cbentry.borrow().as_string().width(),
-    _ => 0,
+   .filter(|line| {
+    let mut res = true;
+    let mut r = self.regex.clone();
+    r.extend(self.regex_edit_mode_last_working.iter().cloned());
+    for r in r {
+     if !r.is_match(&line.cbentry.borrow().as_string()) {
+      res = false;
+      break;
+     }
+    }
+    res
    })
-   .max()
-   .unwrap_or(0);
-  // max_line_width.saturating_sub(self.main_width / 2)
-  max_line_width
+   .collect::<VecDeque<_>>();
+
+  self.regex_filtered_cbs_entries = filtered_entries
+   .iter()
+   .map(|x| FilteredCbsEntries::ACE(x.id))
+   .collect::<VecDeque<FilteredCbsEntries>>();
+
+  {
+   let cbtype_enum_vector: Vec<CBType> = all::<CBType>().collect::<Vec<_>>();
+   let mut last_entries = cbtype_enum_vector
+    .iter()
+    .map(|x| cbs.last_entries.get(x))
+    .collect::<Vec<_>>();
+
+   last_entries.sort_by(|a, b| match (a, b) {
+    (None, None) => Ordering::Equal,
+    (None, Some(_)) => Ordering::Less,
+    (Some(_), None) => Ordering::Greater,
+    (Some(c), Some(d)) => c
+     .cbentry
+     .borrow()
+     .get_timestamp()
+     .cmp(&d.cbentry.borrow().get_timestamp()),
+   });
+
+   self
+    .regex_filtered_cbs_entries
+    .push_front(FilteredCbsEntries::Line);
+   last_entries
+    .iter()
+    .map(|x| match x {
+     Some(v) => FilteredCbsEntries::ACE(v.id),
+     None => FilteredCbsEntries::Empty,
+    })
+    .for_each(|x| self.regex_filtered_cbs_entries.push_front(x));
+  }
+
+  self.last_entry_count = cbs.get_entries().len();
+  self.needs_refilter = false;
+ }
+
+ fn get_max_hoffset_main(&self) -> usize {
+  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+   let entries = &self.regex_filtered_cbs_entries;
+   if cursor < entries.len() {
+    match &entries[cursor] {
+     FilteredCbsEntries::ACE(id) => {
+      if let Some(cbentry) = self.entry_by_id.get(id) {
+       return tabfix(&flatline(&cbentry.borrow().as_string())).width();
+      }
+     }
+     _ => {}
+    }
+   }
+  }
+  0
  }
 
  fn get_max_hoffset_second(&self) -> usize {
-  let entries = &self.regex_filtered_cbs_entries;
-  let max_line_width = entries
-   .iter()
-   .filter_map(|e| match e {
-    FilteredCbsEntries::ACE(a) => {
-     let text = a.cbentry.borrow().as_string().into_owned();
-     if text.contains('\n') {
-      Some(text.lines().map(|l| l.width()).max().unwrap_or(0))
-     } else {
-      Some(text.width())
+  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+   let entries = &self.regex_filtered_cbs_entries;
+   if cursor < entries.len() {
+    match &entries[cursor] {
+     FilteredCbsEntries::ACE(id) => {
+      if let Some(cbentry) = self.entry_by_id.get(id) {
+       if let Some(cursor_second) = self.scroller_second.get_cursor_in_array() {
+        let cbentry_borrowed = cbentry.borrow();
+        let lines = cbentry_borrowed.get_text();
+        // return lines.iter().map(|l| tabfix(l).width()).max().unwrap_or(0);
+        if cursor_second < lines.len() {
+         return tabfix(&lines[cursor_second]).width();
+        }
+       }
+      }
      }
+     _ => {}
     }
-    _ => None,
-   })
-   .max()
-   .unwrap_or(0);
-  // max_line_width.saturating_sub(self.second_width / 2)
-  max_line_width
+   }
+  }
+  0
  }
 
  fn toggle_active_area(&mut self) {
@@ -709,9 +790,17 @@ impl TermionScreenPainter for TermionScreenFirstPage {
  /// the paint method opens a TwoScreenDefaultWidget which is later painted
  /// by the terminal.draw method
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
-  let layout = &mut self.layout;
-
   let cbs = &mut assd.cbs;
+
+  if cbs.get_entries().len() != self.last_entry_count {
+   self.needs_refilter = true;
+  }
+  trace!("needs_refilter {}", self.needs_refilter);
+  // self.needs_refilter = false;
+  self.update_filtered_entries(cbs);
+  // return;
+
+  let layout = &mut self.layout;
 
   let rv = if self.flipstate == 0 {
    &RatatuiVariables::new::<PagerLayoutBase>(terminal)
@@ -736,65 +825,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     .map(|x| x.inner(Margin::new(1, 1)));
 
    let mut lines = vec![];
-
+   // cawxd8rc8j 0%
    {
-    let entries = cbs.get_entries();
-
-    // gtewxxi8oh
-    let entries = entries
-     .iter()
-     .filter(|line| {
-      let mut res = true;
-      // TODO : regex_edit_mode_last_working
-      let mut r = self.regex.clone();
-      r.extend(self.regex_edit_mode_last_working.iter().cloned());
-      for r in r {
-       if !r.is_match(&line.cbentry.borrow().as_string()) {
-        res = false;
-        break;
-       }
-      }
-      res
-     })
-     .collect::<VecDeque<_>>();
-
-    self.regex_filtered_cbs_entries = entries
-     .iter()
-     .map(|x| FilteredCbsEntries::ACE((**x).clone()))
-     .collect::<VecDeque<FilteredCbsEntries>>();
-
-    drop(entries);
-
-    {
-     let cbtype_enum_vector: Vec<CBType> = all::<CBType>().collect::<Vec<_>>();
-     let mut last_entries = cbtype_enum_vector
-      .iter()
-      .map(|x| cbs.last_entries.get(x))
-      .collect::<Vec<_>>();
-
-     last_entries.sort_by(|a, b| match (a, b) {
-      (None, None) => Ordering::Equal,
-      (None, Some(_)) => Ordering::Less,
-      (Some(_), None) => Ordering::Greater,
-      (Some(c), Some(d)) => c
-       .cbentry
-       .borrow()
-       .get_timestamp()
-       .cmp(&d.cbentry.borrow().get_timestamp()),
-     });
-
-     self
-      .regex_filtered_cbs_entries
-      .push_front(FilteredCbsEntries::Line);
-     last_entries
-      .iter()
-      .map(|x| match x {
-       Some(v) => FilteredCbsEntries::ACE((*v).clone()),
-       None => FilteredCbsEntries::Empty,
-      })
-      .for_each(|x| self.regex_filtered_cbs_entries.push_front(x));
-    }
-
     let entries = &self.regex_filtered_cbs_entries;
 
     // let mut selected_string = Vec::<u8>::new();
@@ -824,52 +856,56 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
 
     // iwcqjc9i11 Example for the line selection
+    // cawxd8rc8j 40%
 
     for (idx, entry) in entries
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
      match entry {
-      FilteredCbsEntries::ACE(appended_cbentry) => {
-       let cbentry = &appended_cbentry.cbentry;
-       let is_cursor = match self.scroller_main.get_cursor() {
-        None => false,
-        Some(value) => idx == value,
-       };
+      FilteredCbsEntries::ACE(id) => {
+       let appended_cbentry = cbs.cbentries.iter().find(|e| e.id == *id);
+       if let Some(appended_cbentry) = appended_cbentry {
+        let cbentry = &appended_cbentry.cbentry;
+        let is_cursor = match self.scroller_main.get_cursor() {
+         None => false,
+         Some(value) => idx == value,
+        };
 
-       let cursor_star = if is_cursor { ">" } else { " " };
+        let cursor_star = if is_cursor { ">" } else { " " };
 
-       // let is_selected = entry.is_selected(cbs);
-       let is_selected = cbs.is_fixated(cbentry);
+        // let is_selected = entry.is_selected(cbs);
+        let is_selected = cbs.is_fixated(cbentry);
 
-       let selection_star = if is_selected { "*" } else { " " };
+        let selection_star = if is_selected { "*" } else { " " };
 
-       let cbentry_borrowed = cbentry.borrow_mut();
+        let cbentry_borrowed = cbentry.borrow_mut();
 
-       if is_cursor {
-        if self.prev_selected_text.as_ref() != Some(cbentry_borrowed.get_data()) {
-         self.scroller_second.reset_hoffset();
-         self.prev_selected_text = Some(cbentry_borrowed.get_data().clone());
+        if is_cursor {
+         if self.prev_selected_text.as_ref() != Some(cbentry_borrowed.get_data()) {
+          self.scroller_second.reset_hoffset();
+          self.prev_selected_text = Some(cbentry_borrowed.get_data().clone());
+         }
+         // selected_string = cbentry.data.clone();
+         // selected_lines = cbentry_borrowed.get_text();
+         selected_cbentry = Some(Rc::clone(cbentry));
+         let _ = line_count2.insert(cbentry_borrowed.get_text().len());
         }
-        // selected_string = cbentry.data.clone();
-        // selected_lines = cbentry_borrowed.get_text();
-        selected_cbentry = Some(Rc::clone(cbentry));
-        let _ = line_count2.insert(cbentry_borrowed.get_text().len());
-       }
 
-       {
-        let s002 = format!(
-         "{} {} {:width$} {} {} : {}",
-         cursor_star,
-         selection_star,
-         idx + self.scroller_main.get_windowposition(), // mqbojcmkot
-         cbentry_borrowed.get_cbtype().get_info(),
-         cbentry_borrowed.get_date_time(),
-         cbentry_borrowed.as_string(),
-         width = numbers_width,
-        );
-        // lines.push(layout.fixline(&s002));
-        lines.push(flatline(&s002));
+        {
+         let s002 = format!(
+          "{} {} {:width$} {} {} : {}",
+          cursor_star,
+          selection_star,
+          idx + self.scroller_main.get_windowposition(), // mqbojcmkot
+          cbentry_borrowed.get_cbtype().get_info(),
+          cbentry_borrowed.get_date_time(),
+          cbentry_borrowed.as_string(),
+          width = numbers_width,
+         );
+         // lines.push(layout.fixline(&s002));
+         lines.push(flatline(&s002));
+        }
        }
       }
       FilteredCbsEntries::Line => {
@@ -884,6 +920,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     // let all_lines = lines.join("\n");
     let all_lines = lines;
 
+    // cawxd8rc8j 40%
     let all_lines2 = {
      let string_lines = match selected_cbentry {
       Some(rc) => rc.borrow().get_text().clone(),
@@ -901,7 +938,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       },
      )
     };
-
+    // cawxd8rc8j 50%
     let sw = TwoScreenDefaultWidget {
      helpline: HELP_FIRST_PAGE,
      main_title: "entry list",
@@ -968,6 +1005,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     _ => {}
    }
+   self.needs_refilter = true;
    return NextTsp::IgnoreBasicEvents;
   } else if self.delete_confirm_mode.is_some() {
    match evt {
@@ -975,9 +1013,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      self.delete_confirm_mode = None;
     }
     MyEvent::Termion(Event::Key(Key::Char('y'))) => {
-     if let Some(seq) = self.delete_confirm_mode {
-      cbs.remove_by_seq(seq);
+     if let Some(id) = self.delete_confirm_mode {
+      cbs.remove_by_seq(id);
       self.delete_confirm_mode = None;
+      self.needs_refilter = true;
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('n'))) => {
@@ -990,6 +1029,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
    match evt {
     MyEvent::Termion(Event::Key(Key::Char('r'))) => {
      self.regex.pop();
+     self.needs_refilter = true;
     }
     //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
     MyEvent::Termion(Event::Key(Key::Char('h'))) => {
@@ -1008,11 +1048,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
-      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
-       // let entry = &appended_cbentry.cbentry.clone();
-       // let entry = &entries[cursor].cbentry.clone(); // NOTE: the clone can maybe avoided when I put this logic into cbs
-       // entry.toggle_selection(&mut cbs);
-       cbs.toggle_fixation(appended_cbentry);
+      if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
+       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+        cbs.toggle_fixation(&(*appended_cbentry).clone());
+       }
       }
      }
     }
@@ -1022,12 +1061,14 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
-      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
-       return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
-        self.config,
-        "view entry".to_string(),
-        appended_cbentry.cbentry.borrow().clone(),
-       ))));
+      if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
+       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+        return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
+         self.config,
+         "view entry".to_string(),
+         appended_cbentry.cbentry.borrow().clone(),
+        ))));
+       }
       };
      }
     }
@@ -1036,31 +1077,29 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       // let entry = &entries[cursor];
 
-      if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
-       match TermionScreenEditorPage::new(
-        self.config,
-        appended_cbentry
-         .cbentry
-         .borrow_mut()
-         .as_string()
-         .into_owned(),
-        cursor,
-       ) {
-        Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
-        Err(e) => {
-         eprintln!("Failed to create editor page: {}", e);
-         match assd.statusline_heap.try_borrow_mut() {
-          Ok(mut v) => v.push(StatusMessage {
-           severity: crate::libmain::StatusSeverity::Warning,
-           text: format!("Failed to create editor page: {}", e),
-          }),
-          Err(err) => {
-           trace!("Failed to create editor page: {}", e);
-           trace!("Failed to create editor page: {}", err);
-           trace!("Failed to open statusline heap: ");
+      if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
+       if let Some(appended_cbentry) = cbs.cbentries.iter().find(|e| e.id == *id) {
+        match TermionScreenEditorPage::new(
+         self.config,
+         appended_cbentry.cbentry.borrow().as_string().into_owned(),
+         *id,
+        ) {
+         Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
+         Err(e) => {
+          eprintln!("Failed to create editor page: {}", e);
+          match assd.statusline_heap.try_borrow_mut() {
+           Ok(mut v) => v.push(StatusMessage {
+            severity: crate::libmain::StatusSeverity::Warning,
+            text: format!("Failed to create editor page: {}", e),
+           }),
+           Err(err) => {
+            trace!("Failed to create editor page: {}", e);
+            trace!("Failed to create editor page: {}", err);
+            trace!("Failed to open statusline heap: ");
+           }
           }
+          return NextTsp::NoNextTsp;
          }
-         return NextTsp::NoNextTsp;
         }
        }
       }
@@ -1076,8 +1115,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
-      } else if let FilteredCbsEntries::ACE(appended_cbentry) = &entries[cursor] {
-       self.delete_confirm_mode = Some(appended_cbentry.seq);
+      } else if let FilteredCbsEntries::ACE(id) = &entries[cursor] {
+       self.delete_confirm_mode = Some(*id);
       }
      }
     }
@@ -1089,6 +1128,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('/'))) => {
      self.regex_edit_mode = Some("".to_string());
+     self.needs_refilter = true;
     }
     _ => {
      // TODO : optimize
@@ -1113,11 +1153,11 @@ pub struct TermionScreenEditorPage {
  tmpfile: Temp,
  tmpfile_path: PathBuf,
  edited: bool,
- index: usize,
+ entry_id: AcbeId,
 }
 
 impl TermionScreenEditorPage {
- pub fn new(config: &'static Config, text: String, index: usize) -> Result<Self, String> {
+ pub fn new(config: &'static Config, text: String, entry_id: AcbeId) -> Result<Self, String> {
   let tmpfile = Temp::new_file().map_err(|e| format!("Failed to create temp file: {}", e))?;
   let tmpfile_path = tmpfile.to_path_buf();
   let mut fs = File::create(&tmpfile).map_err(|e| format!("Failed to create temp file: {}", e))?;
@@ -1130,7 +1170,7 @@ impl TermionScreenEditorPage {
    tmpfile,
    tmpfile_path,
    edited: false,
-   index,
+   entry_id,
   })
  }
 }
@@ -1159,8 +1199,8 @@ impl TermionScreenPainter for TermionScreenEditorPage {
      let mut buf = Vec::new();
      match fh.read_to_end(&mut buf) {
       Ok(_) => {
-       let idx = self.index;
-       if let Some(entry) = assd.cbs.cbentries.get_mut(idx) {
+       let entry_id = self.entry_id;
+       if let Some(entry) = assd.cbs.cbentries.iter_mut().find(|e| e.id == entry_id) {
         entry.cbentry.borrow_mut().set_data(&buf);
        }
       }

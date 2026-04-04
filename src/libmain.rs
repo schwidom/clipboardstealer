@@ -69,7 +69,7 @@ use std::sync::{
 
 use crate::clipboards::cbentry::CBEntry;
 use crate::clipboards::cbentry::CBEntryString;
-use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
+use crate::clipboards::{AcbeId, CBType, ClipboardFixation, ClipboardReaderWriter};
 
 /// Drain any pending input from stdin to clear escape sequences from external editors
 // fn drain_stdin() { // works randomly
@@ -526,7 +526,7 @@ impl AppStateReceiverData {
      appended_bin: true,
      appended_string: true,
      cbentry: Rc::new(RefCell::new(cbentry)),
-     seq: cbs.seq_counter,
+     id: AcbeId::new(cbs.seq_counter),
     });
     cbs.seq_counter += 1;
    }
@@ -564,7 +564,7 @@ impl AppStateReceiverData {
      appended_bin: true,
      appended_string: true,
      cbentry: Rc::new(RefCell::new(cbentry)),
-     seq: cbs.seq_counter,
+     id: AcbeId::new(cbs.seq_counter),
     });
     cbs.seq_counter += 1;
    }
@@ -982,15 +982,19 @@ pub fn main() {
  appstate.asr.run_loop();
 
  if config.debug {
-  monitor2("ctjh");
+  monitor2("ttjh.join()");
  }
 
  ttjh.join().unwrap().unwrap(); // needed
 
+ if config.debug {
+  monitor2("ctjh.join()");
+ }
+
  ctjh.join().unwrap().unwrap(); // needed
 
  if config.debug {
-  monitor2("mtjh");
+  monitor2("mtjh.join()");
  }
 
  mtjh.join().unwrap().unwrap(); // currently not needed, but possible, for the sake of tidyness

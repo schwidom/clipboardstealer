@@ -166,14 +166,13 @@ impl ClipboardReaderWriter {
     let mut echofree = self.echofree.lock().unwrap();
     let text = selection_u8;
     let echofree_bool = echofree.contains(&text);
-    trace!("crw_read text :{:?}", text);
-    trace!("crw_read echofree :{:?}", self.echofree.lock().unwrap());
+    // trace!("crw_read text :{:?}", text);
+    // trace!("crw_read echofree :{:?}", echofree);
     if !echofree_bool
      && self
       .echofree_read
       .load(std::sync::atomic::Ordering::Relaxed)
     {
-     // self.echofree.lock().unwrap().clear();
      echofree.clear();
     }
     self
@@ -207,8 +206,7 @@ impl ClipboardReaderWriter {
    .echofree_read
    .store(false, std::sync::atomic::Ordering::Relaxed);
   // let x = self.echofree.lock().unwrap().insert(s.clone());
-  // trace!("crw_write_echofree :{:?}", self.echofree.lock().unwrap());
-  trace!("crw_write_echofree :{:?}", echofree);
+  // trace!("crw_write_echofree :{:?}", echofree);
   let value = s;
   let selection = self.atom;
 
@@ -234,6 +232,8 @@ pub mod cbentry {
   data: Vec<u8>,
   #[serde(skip)]
   text: OnceCell<Vec<String>>,
+  #[serde(skip)]
+  string_cache: OnceCell<String>,
  }
 
  #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,6 +258,7 @@ pub mod cbentry {
     timestamp: json_entry.timestamp.clone(),
     data: json_entry.text.into_bytes(),
     text: OnceCell::default(),
+    string_cache: OnceCell::default(),
    }
   }
  }
@@ -269,6 +270,7 @@ pub mod cbentry {
     timestamp: MyTime::now(),
     data: Vec::from(data),
     text: OnceCell::default(),
+    string_cache: OnceCell::default(),
    }
   }
 
@@ -293,11 +295,14 @@ pub mod cbentry {
   pub fn set_data(&mut self, data: &[u8]) {
    self.data = Vec::from(data);
    self.text = OnceCell::default();
+   self.string_cache = OnceCell::default();
   }
   pub fn as_string(&self) -> Cow<'_, str> {
-   // besser Vec<u8> in einem CBEText unterbringen, ggf. mit einem String Cow oder gleich einem String // u79a6domic
-   // dann ist aber CBEntry wieder inkompatibel zum append speicherformat
-   String::from_utf8_lossy(&self.data)
+   Cow::Borrowed(
+    self
+     .string_cache
+     .get_or_init(|| String::from_utf8_lossy(&self.data).into_owned()),
+   )
   }
 
   pub fn get_text(&self) -> &Vec<String> {
@@ -314,6 +319,8 @@ pub mod cbentry {
    std::mem::swap(&mut self.data, &mut other.data);
    self.text = OnceCell::default();
    other.text = OnceCell::default();
+   self.string_cache = OnceCell::default();
+   other.string_cache = OnceCell::default();
   }
 
   pub fn from_cbtype_timestamp_data(cbtype: &CBType, timestamp: &MyTime, data: &[u8]) -> Self {
@@ -322,6 +329,7 @@ pub mod cbentry {
     timestamp: timestamp.clone(),
     data: Vec::from(data),
     text: OnceCell::default(),
+    string_cache: OnceCell::default(),
    }
   }
  }
@@ -349,12 +357,25 @@ impl ClipboardFixation {
  }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AcbeId(usize);
+
+impl AcbeId {
+ pub fn new(seq: usize) -> Self {
+  AcbeId(seq)
+ }
+
+ pub fn as_usize(self) -> usize {
+  self.0
+ }
+}
+
 #[derive(Clone, Debug)]
 pub struct AppendedCBEntry {
  pub appended_bin: bool,
  pub appended_string: bool,
  pub cbentry: Rc<RefCell<CBEntry>>,
- pub seq: usize,
+ pub id: AcbeId,
 }
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
@@ -448,12 +469,12 @@ impl Clipboards {
     let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
 
     let cbentry = Rc::new(RefCell::new(cbentry));
-    let seq = self.seq_counter;
+    let id = AcbeId(self.seq_counter);
     self.cbentries.push_front(AppendedCBEntry {
      appended_bin: false,
      appended_string: false,
      cbentry: cbentry.clone(), // (now, s.clone())
-     seq,
+     id,
     });
     // self.last_entries.get_mut(&cbentry.borrow().cbtype) = cbentry;
     self.last_entries.insert(
@@ -462,7 +483,7 @@ impl Clipboards {
       appended_bin: false,
       appended_string: false,
       cbentry: cbentry.clone(),
-      seq,
+      id,
      },
     );
     self.seq_counter += 1;
@@ -652,8 +673,8 @@ impl Clipboards {
   }
  }
 
- pub(crate) fn remove_by_seq(&mut self, seq: usize) -> Option<AppendedCBEntry> {
-  if let Some(pos) = self.cbentries.iter().position(|e| e.seq == seq) {
+ pub(crate) fn remove_by_seq(&mut self, id: AcbeId) -> Option<AppendedCBEntry> {
+  if let Some(pos) = self.cbentries.iter().position(|e| e.id == id) {
    self.cbentries.remove(pos)
   } else {
    None

@@ -34,9 +34,6 @@ impl Pager {
    MyEvent::Termion(Event::Key(Key::ShiftLeft)) => {
     scroller.reset_hoffset();
    }
-//    MyEvent::Termion(Event::Key(Key::ShiftRight)) => {
-//     scroller.scroll_right_to_end();
-//    }
    MyEvent::Termion(Event::Key(Key::Right)) => {
     scroller.scroll_right();
    }

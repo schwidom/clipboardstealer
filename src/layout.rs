@@ -11,9 +11,9 @@ pub struct Layout {
 }
 
 impl Default for Layout {
-    fn default() -> Self {
-        Self::new()
-    }
+ fn default() -> Self {
+  Self::new()
+ }
 }
 
 impl Layout {
@@ -34,7 +34,7 @@ impl Layout {
  //  self.height = Some(height);
  // }
 
- pub(crate) fn set_width_height_from_rect(&mut self, rect : Rect){
+ pub(crate) fn set_width_height_from_rect(&mut self, rect: Rect) {
   self.width = Some(rect.width);
   self.height = Some(rect.height);
  }
