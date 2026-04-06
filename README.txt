@@ -1,3 +1,6 @@
+
+![Animation](pix/presentation.gif)
+
 # Usage: clipboardstealer [OPTIONS]
 
 ## Options:
