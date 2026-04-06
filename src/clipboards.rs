@@ -1,6 +1,6 @@
 // use std::borrow::Borrow; // TODO : why does this lead to an compiler error?
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -423,7 +423,7 @@ impl AcbeIdGenerator {
  }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct AcbeId(usize);
 
 impl AcbeId {
@@ -463,9 +463,8 @@ pub struct AppendedCBEntry {
 pub struct Clipboards {
  // pub hm: HashMap<String, ClipboardSelectionList>,
  // pub crw: ClipboardReaderWriter,
- cbentries: VecDeque<AppendedCBEntry>,
+ cbentries: BTreeMap<AcbeId, AppendedCBEntry>,
  last_entries: HashMap<CBType, AppendedCBEntry>,
- entry_by_id: HashMap<AcbeId, Rc<RefCell<CBEntry>>>,
  // NOTE : no weak pointer here, Optional<Rc> is better,
  // even if entry disappears from the list (currently not possible but maybe later)
  // it can still be selected
@@ -496,9 +495,8 @@ impl Clipboards {
    .collect();
 
   Self {
-   cbentries: VecDeque::new(),
+   cbentries: BTreeMap::new(),
    last_entries: HashMap::new(),
-   entry_by_id: HashMap::new(),
    cfmap,
    append_file_bin: None,
    append_file_bin_error_reported: false,
@@ -538,28 +536,34 @@ impl Clipboards {
 
    if insert {
     let now = MyTime::now();
-    let should_pop_front = if let Some(last) = self.cbentries.front() {
-     let last_time = &last.cbentry.borrow().get_timestamp();
+    let should_remove_last = if let Some(last) = self.cbentries.last_entry() {
+     let last_time = &last.get().cbentry.borrow().get_timestamp();
      let span = now.timestamp - last_time.timestamp;
-     cbtype == &last.cbentry.borrow().get_cbtype() && span < TimeDelta::milliseconds(300)
+     cbtype == &last.get().cbentry.borrow().get_cbtype() && span < TimeDelta::milliseconds(300)
     } else {
      false
     };
-    if should_pop_front {
-     self.cbentries.pop_front();
+    if should_remove_last {
+     self.cbentries.pop_last();
     }
 
     let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
 
     let cbentry = Rc::new(RefCell::new(cbentry));
     let id = self.seq_counter.inc();
-    self.cbentries.push_front(AppendedCBEntry {
-     appended_bin: false,
-     appended_string: false,
-     cbentry: cbentry.clone(), // (now, s.clone())
+    self.cbentries.insert(
      id,
-    });
+     AppendedCBEntry {
+      appended_bin: false,
+      appended_string: false,
+      cbentry: cbentry.clone(), // (now, s.clone())
+      id,
+     },
+    );
     // self.last_entries.get_mut(&cbentry.borrow().cbtype) = cbentry;
+    drop(id);
+    // second ID avoids conflicts
+    let id = self.seq_counter.inc();
     self.last_entries.insert(
      cbentry.borrow().get_cbtype(),
      AppendedCBEntry {
@@ -569,21 +573,20 @@ impl Clipboards {
       id,
      },
     );
-    assert!(self.entry_by_id.insert(id, cbentry.clone()).is_none());
    }
   }
  }
 
- pub fn get_entries(&self) -> &VecDeque<AppendedCBEntry> {
+ pub fn get_entries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
   &self.cbentries
  }
 
  pub fn get_entry_by_id(&self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
-  self.entry_by_id.get(&id).cloned()
+  self.cbentries.get(&id).map(|e| e.cbentry.clone())
  }
 
  pub fn get_entry_by_id_mut(&mut self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
-  self.entry_by_id.get(&id).cloned()
+  self.cbentries.get(&id).map(|e| e.cbentry.clone())
  }
 
  pub(crate) fn append_ndjson_bin(&mut self, append_filename_string: &str) -> Result<(), String> {
@@ -610,7 +613,7 @@ impl Clipboards {
   let now = MyTime::now();
 
   let _: () = if let Some(ref mut fd) = self.append_file_bin {
-   for cbentry in &mut self.cbentries {
+   for cbentry in self.cbentries.values_mut().rev() {
     if cbentry.appended_bin {
      break;
     } else {
@@ -655,7 +658,7 @@ impl Clipboards {
   let now = MyTime::now();
 
   let _: () = if let Some(ref mut fd) = self.append_file_string {
-   for cbentry in &mut self.cbentries {
+   for cbentry in self.cbentries.values_mut().rev() {
     if cbentry.appended_string {
      break;
     } else {
@@ -765,11 +768,10 @@ impl Clipboards {
  }
 
  pub(crate) fn remove_by_seq(&mut self, id: AcbeId) {
-  self.cbentries.retain(|x| x.id != id);
-  self.entry_by_id.remove(&id);
+  self.cbentries.remove(&id);
  }
 
- pub fn get_cbentries(&self) -> &VecDeque<AppendedCBEntry> {
+ pub fn get_cbentries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
   &self.cbentries
  }
 
@@ -781,13 +783,15 @@ impl Clipboards {
  pub(crate) fn push_back(&mut self, cbentry: CBEntry) {
   let cbentry = Rc::new(RefCell::new(cbentry));
   let id = self.seq_counter.inc();
-  self.cbentries.push_back(AppendedCBEntry {
-   appended_bin: true,
-   appended_string: true,
-   cbentry: Rc::clone(&cbentry),
+  self.cbentries.insert(
    id,
-  });
-  assert!(self.entry_by_id.insert(id, cbentry).is_none());
+   AppendedCBEntry {
+    appended_bin: true,
+    appended_string: true,
+    cbentry: Rc::clone(&cbentry),
+    id,
+   },
+  );
  }
 
  pub(crate) fn get_last_entries(&self) -> &HashMap<CBType, AppendedCBEntry> {
@@ -860,7 +864,6 @@ mod clipboards_tests {
 
   assert_eq!(clipboards.cbentries.len(), 1);
   assert!(clipboards.last_entries.contains_key(&CBType::Clipboard));
-  assert_eq!(clipboards.entry_by_id.len(), 1);
  }
 
  #[test]
@@ -872,7 +875,6 @@ mod clipboards_tests {
 
   assert_eq!(clipboards.cbentries.len(), 1);
   assert!(clipboards.last_entries.contains_key(&CBType::Clipboard));
-  assert_eq!(clipboards.entry_by_id.len(), 3);
 
   let last = &clipboards.last_entries[&CBType::Clipboard];
   assert_eq!(last.cbentry.borrow().get_data(), b"third");
@@ -904,7 +906,6 @@ mod clipboards_tests {
   clipboards.insert(&CBType::Clipboard, Some(b"test".to_vec()));
 
   assert_eq!(clipboards.cbentries.len(), 1);
-  assert_eq!(clipboards.entry_by_id.len(), 1);
  }
 
  #[test]
@@ -946,16 +947,16 @@ mod clipboards_tests {
  fn test_id_sequential_assignment() {
   let mut clipboards = Clipboards::new();
   clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
-  let first_id = clipboards.cbentries.front().unwrap().id;
+  let first_id = clipboards.cbentries.last_entry().unwrap().get().id;
   assert_eq!(first_id.as_usize(), 0);
 
   clipboards.insert(&CBType::Primary, Some(b"second".to_vec()));
-  let second_id = clipboards.cbentries.front().unwrap().id;
-  assert_eq!(second_id.as_usize(), 1);
+  let second_id = clipboards.cbentries.last_entry().unwrap().get().id;
+  assert_eq!(second_id.as_usize(), 2);
 
   clipboards.insert(&CBType::Clipboard, Some(b"third".to_vec()));
-  let third_id = clipboards.cbentries.front().unwrap().id;
-  assert_eq!(third_id.as_usize(), 2);
+  let third_id = clipboards.cbentries.last_entry().unwrap().get().id;
+  assert_eq!(third_id.as_usize(), 4);
  }
 
  #[test]
@@ -963,7 +964,7 @@ mod clipboards_tests {
   let mut clipboards = Clipboards::new();
   clipboards.insert(&CBType::Clipboard, Some(b"test".to_vec()));
 
-  let entry_id = clipboards.cbentries.front().unwrap().id;
+  let entry_id = clipboards.cbentries.last_entry().unwrap().get().id;
   let entry = clipboards.get_entry_by_id(entry_id);
 
   assert!(entry.is_some());
@@ -980,8 +981,9 @@ mod clipboards_tests {
   assert_eq!(
    clipboards
     .cbentries
-    .front()
+    .last_entry()
     .unwrap()
+    .get()
     .cbentry
     .borrow()
     .get_data(),
