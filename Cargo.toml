@@ -9,7 +9,7 @@ license-file = "LICENSE"
 homepage = "https://github.com/schwidom/clipboardstealer"
 repository = "https://github.com/schwidom/clipboardstealer"
 keywords = ["x11", "clipboard", "manager", "terminal", "tui"]
-readme = "README.txt"
+readme = "README.md"
 
 [dependencies]
 
