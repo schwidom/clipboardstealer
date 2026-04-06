@@ -451,12 +451,20 @@ impl AcbeId {
 // {
 // }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct AppendedCBEntry {
  pub appended_bin: bool,
  pub appended_string: bool,
  pub cbentry: Rc<RefCell<CBEntry>>,
  pub id: AcbeId,
+}
+
+impl AppendedCBEntry {
+ fn clone_with_new_id(&self, id: AcbeId) -> Self {
+  let mut ret = self.clone();
+  ret.id = id;
+  ret
+ }
 }
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
@@ -582,7 +590,11 @@ impl Clipboards {
  }
 
  pub fn get_entry_by_id(&self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
-  self.cbentries.get(&id).map(|e| e.cbentry.clone())
+  self
+   .cbentries
+   .get(&id)
+   .or_else(|| self.last_entries.values().find(|x| x.id == id))
+   .map(|e| e.cbentry.clone())
  }
 
  pub fn get_entry_by_id_mut(&mut self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
@@ -711,9 +723,10 @@ impl Clipboards {
   if insert {
    cf.fixation = Some(appended_cbentry.clone());
    cf.restore();
+   let id = self.seq_counter.inc();
    self
     .last_entries
-    .insert(appended_cbentry.cbentry.borrow().get_cbtype(), appended_cbentry.clone());
+    .insert(appended_cbentry.cbentry.borrow().get_cbtype(), appended_cbentry.clone_with_new_id(id));
   } else {
    cf.fixation = None
   }
