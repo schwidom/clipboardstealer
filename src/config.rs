@@ -33,6 +33,15 @@ Options:
           loads clipboard information from file and appends to it (JSON String format)
       --editor
           interprets the EDITOR environment variable always as editor
+      --convert-bin-ndjson <CONVERT_BIN_NDJSON>
+          converts bin ndjson to string ndjson (input file)
+      --to-string-ndjson <TO_STRING_NDJSON>
+          output file for converted bin ndjson
+      --convert-string-ndjson <CONVERT_STRING_NDJSON>
+          converts string ndjson to bin ndjson (input file)
+      --to-bin-ndjson <TO_BIN_NDJSON>
+          output file for converted string ndjson
+
       --debug
           provides debug information
       --debugfile <DEBUGFILE>

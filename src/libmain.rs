@@ -130,10 +130,6 @@ pub struct Args {
   help = "interprets the EDITOR environment variable always as editor"
  )]
  pub(crate) editor: bool,
- #[arg(long, default_value_t = false, help = "provides debug information")]
- pub(crate) debug: bool,
- #[arg(long, help = "writes debug information into file")]
- pub(crate) debugfile: Option<String>,
  #[arg(long, help = "converts bin ndjson to string ndjson (input file)")]
  pub(crate) convert_bin_ndjson: Option<String>,
  #[arg(long, help = "output file for converted bin ndjson")]
@@ -142,6 +138,10 @@ pub struct Args {
  pub(crate) convert_string_ndjson: Option<String>,
  #[arg(long, help = "output file for converted string ndjson")]
  pub(crate) to_bin_ndjson: Option<String>,
+ #[arg(long, default_value_t = false, help = "provides debug information")]
+ pub(crate) debug: bool,
+ #[arg(long, help = "writes debug information into file")]
+ pub(crate) debugfile: Option<String>,
 }
 
 #[derive(Debug)]
