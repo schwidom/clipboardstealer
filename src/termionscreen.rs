@@ -802,37 +802,31 @@ impl TermionScreenFirstPage {
   self.needs_refilter = false;
  }
 
- fn get_max_hoffset_main(&self, cbs: &crate::clipboards::Clipboards) -> usize {
+ fn get_max_hoffset_main(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
-    match &entries[cursor] {
-     FilteredCbsEntries::ACE(acbe) => {
-      return tabfix(&flatline(&acbe.cbentry.borrow().as_string())).width();
-     }
-     _ => {}
+    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+     return tabfix(&flatline(&acbe.cbentry.borrow().as_string())).width();
     }
    }
   }
   0
  }
 
- fn get_max_hoffset_second(&self, cbs: &crate::clipboards::Clipboards) -> usize {
+ fn get_max_hoffset_second(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
-    match &entries[cursor] {
-     FilteredCbsEntries::ACE(acbe) => {
-      if let Some(cursor_second) = self.scroller_second.get_cursor_in_array() {
-       let cbentry_borrowed = acbe.cbentry.borrow();
-       let lines = cbentry_borrowed.get_text();
-       // return lines.iter().map(|l| tabfix(l).width()).max().unwrap_or(0);
-       if cursor_second < lines.len() {
-        return tabfix(&lines[cursor_second]).width();
-       }
+    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+     if let Some(cursor_second) = self.scroller_second.get_cursor_in_array() {
+      let cbentry_borrowed = acbe.cbentry.borrow();
+      let lines = cbentry_borrowed.get_text();
+      // return lines.iter().map(|l| tabfix(l).width()).max().unwrap_or(0);
+      if cursor_second < lines.len() {
+       return tabfix(&lines[cursor_second]).width();
       }
      }
-     _ => {}
     }
    }
   }
@@ -1038,12 +1032,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
   let cbs = &mut assd.cbs;
 
-  match evt {
-   MyEvent::CbInserted => {
-    self.needs_refilter = true;
-    return NextTsp::NoNextTsp;
-   }
-   _ => {}
+  if evt == &MyEvent::CbInserted {
+   self.needs_refilter = true;
+   return NextTsp::NoNextTsp;
   }
 
   if let Some(mut regex_edit_mode) = self.regex_edit_mode.clone() {
@@ -1400,7 +1391,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     rv: &rv,
     // all_lines: R::Old(&all_lines),
     all_lines: all_lines.as_ref(),
-    all_lines2: &vec![],
+    all_lines2: &[],
     wrapped1: self.wrapped,
     wrapped2: false,
     regex_edit_mode: None,
