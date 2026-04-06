@@ -108,7 +108,7 @@ pub fn sleep_default() {
 }
 
 // #[derive(Clone)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Config {
  pub debug: bool,
  pub debugfile: Option<String>,

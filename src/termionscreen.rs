@@ -38,6 +38,7 @@ use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
 use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk
 
 use regex::Regex;
+use std::fmt::Debug;
 use std::io::{Read, Write}; // write_all
 
 // get_max_hoffset, get_max_hoffset_main, get_max_hoffset_second
@@ -153,6 +154,65 @@ mod tests {
   assert_eq!("", truncate_before_or_at_display_width("🧑", 1));
   assert_eq!("🧑", truncate_before_or_at_display_width("🧑", 2));
   assert_eq!("🧑", truncate_before_or_at_display_width("🧑", 3));
+ }
+}
+
+#[cfg(test)]
+mod termionscreen_tests {
+ use super::*;
+ use crate::clipboards::{CBType, Clipboards};
+ use crate::event::MyEvent;
+ use crate::libmain::AppStateReceiverData;
+ use std::collections::BinaryHeap;
+ use std::rc::Rc;
+ use std::sync::mpsc::channel;
+
+ #[test]
+ fn test_cb_inserted_sets_needs_refilter() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+  assd
+   .cbs
+   .insert(&CBType::Clipboard, Some(b"test data".to_vec()));
+
+  let mut screen = TermionScreenFirstPage::new(config);
+
+  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
+  assert!(screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
+ }
+
+ #[test]
+ fn test_cb_changed_updates_clipboard_and_refilters() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+
+  let mut screen = TermionScreenFirstPage::new(config);
+
+  assd
+   .cbs
+   .insert(&CBType::Clipboard, Some(b"new entry".to_vec()));
+  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
+
+  assert!(screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
+ }
+
+ #[test]
+ fn test_termion_event_key_handles_normally() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+
+  let mut screen = TermionScreenFirstPage::new(config);
+  screen.needs_refilter = false;
+
+  let next = screen.handle_event(&MyEvent::Termion(Event::Key(Key::Char('a'))), &mut assd);
+
+  assert!(!screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
  }
 }
 
@@ -499,6 +559,25 @@ pub enum NextTsp {
  Quit,
  PopThis,
  IgnoreBasicEvents,
+}
+
+impl PartialEq for NextTsp {
+ fn eq(&self, other: &Self) -> bool {
+  core::mem::discriminant(self) == core::mem::discriminant(other)
+ }
+}
+
+impl Debug for NextTsp {
+ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  match self {
+   NextTsp::NoNextTsp => write!(f, "NoNextTsp"),
+   NextTsp::Replace(_) => write!(f, "Replace(...)"),
+   NextTsp::Stack(_) => write!(f, "Stack(...)"),
+   NextTsp::Quit => write!(f, "Quit"),
+   NextTsp::PopThis => write!(f, "PopThis"),
+   NextTsp::IgnoreBasicEvents => write!(f, "IgnoreBasicEvents"),
+  }
+ }
 }
 
 pub trait TermionScreenPainter {
@@ -964,6 +1043,14 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
  fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
   let cbs = &mut assd.cbs;
+
+  match evt {
+   MyEvent::CbInserted => {
+    self.needs_refilter = true;
+    return NextTsp::NoNextTsp;
+   }
+   _ => {}
+  }
 
   if let Some(mut regex_edit_mode) = self.regex_edit_mode.clone() {
    let regex = Regex::new(&regex_edit_mode);

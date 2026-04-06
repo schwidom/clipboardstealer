@@ -773,11 +773,13 @@ impl<'a> AppStateReceiver<'a> {
       MyEvent::MouseButton1(pressed) => {
        event_state.mouse_button_1_is_pressed = pressed;
        event_state.update_clipboard(&mut self.data.cbs);
+       self.data.sender.send(MyEvent::CbInserted);
       }
 
       MyEvent::Shift(pressed) => {
        event_state.shift_is_pressed = pressed;
        event_state.update_clipboard(&mut self.data.cbs);
+       self.data.sender.send(MyEvent::CbInserted);
       }
 
       // MyEvent::CbInserted => todo!(),
@@ -785,6 +787,7 @@ impl<'a> AppStateReceiver<'a> {
       MyEvent::CbChanged(cbtype, string) => {
        event_state.cb_changed = Some((cbtype, string));
        event_state.update_clipboard(&mut self.data.cbs);
+       self.data.sender.send(MyEvent::CbInserted);
       }
 
       MyEvent::Tick => {

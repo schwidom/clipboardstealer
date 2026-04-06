@@ -7,7 +7,7 @@ use std::io::Write;
 // use std::ops::AddAssign;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -101,6 +101,62 @@ pub struct ClipboardReaderWriter {
  // echofree: Arc<Mutex<HashSet<String>>>,
  echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
  echofree_read: AtomicBool,
+}
+
+#[cfg(test)]
+pub trait ClipboardReaderTrait: Send {
+ fn crw_read(&self) -> Option<Vec<u8>>;
+ fn crw_write(&self, s: String) -> bool;
+ fn cbtype(&self) -> CBType;
+ fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>>;
+}
+
+#[cfg(test)]
+pub struct MockClipboardReaderWriter {
+ read_data: RefCell<Option<Vec<u8>>>,
+ written_data: RefCell<Vec<Vec<u8>>>,
+ cbtype: CBType,
+ echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
+}
+
+#[cfg(test)]
+impl MockClipboardReaderWriter {
+ pub fn new(cbtype: CBType) -> Self {
+  Self {
+   read_data: RefCell::new(None),
+   written_data: RefCell::new(Vec::new()),
+   cbtype,
+   echofree: Arc::new(Mutex::new(HashSet::new())),
+  }
+ }
+
+ pub fn set_read_data(&self, data: Vec<u8>) {
+  *self.read_data.borrow_mut() = Some(data);
+ }
+
+ pub fn get_written(&self) -> Vec<Vec<u8>> {
+  self.written_data.borrow().clone()
+ }
+}
+
+#[cfg(test)]
+impl ClipboardReaderTrait for MockClipboardReaderWriter {
+ fn crw_read(&self) -> Option<Vec<u8>> {
+  self.read_data.borrow_mut().take()
+ }
+
+ fn crw_write(&self, s: String) -> bool {
+  self.written_data.borrow_mut().push(s.into_bytes());
+  true
+ }
+
+ fn cbtype(&self) -> CBType {
+  self.cbtype.clone()
+ }
+
+ fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>> {
+  self.echofree.clone()
+ }
 }
 
 #[derive(Default, PartialEq)]
@@ -358,6 +414,15 @@ impl ClipboardFixation {
  }
 }
 
+#[derive(Default)]
+pub struct AcbeIdGenerator(AtomicUsize);
+
+impl AcbeIdGenerator {
+ fn inc(&mut self) -> AcbeId {
+  AcbeId::new(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+ }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AcbeId(usize);
 
@@ -412,7 +477,7 @@ pub struct Clipboards {
  append_file_bin_error_reported: bool,
  append_file_string: Option<File>,
  append_file_string_error_reported: bool,
- seq_counter: AcbeId,
+ seq_counter: AcbeIdGenerator,
 }
 
 impl Default for Clipboards {
@@ -439,7 +504,7 @@ impl Clipboards {
    append_file_bin_error_reported: false,
    append_file_string: None,
    append_file_string_error_reported: false,
-   seq_counter: AcbeId(0),
+   seq_counter: AcbeIdGenerator::default(),
   }
  }
 
@@ -487,7 +552,7 @@ impl Clipboards {
     let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
 
     let cbentry = Rc::new(RefCell::new(cbentry));
-    let id = self.seq_counter;
+    let id = self.seq_counter.inc();
     self.cbentries.push_front(AppendedCBEntry {
      appended_bin: false,
      appended_string: false,
@@ -505,7 +570,6 @@ impl Clipboards {
      },
     );
     assert!(self.entry_by_id.insert(id, cbentry.clone()).is_none());
-    self.seq_counter.inc();
    }
   }
  }
@@ -700,13 +764,9 @@ impl Clipboards {
   }
  }
 
- pub(crate) fn remove_by_seq(&mut self, id: AcbeId) -> Option<AppendedCBEntry> {
-  if let Some(pos) = self.cbentries.iter().position(|e| e.id == id) {
-   self.entry_by_id.remove(&id);
-   self.cbentries.remove(pos)
-  } else {
-   None
-  }
+ pub(crate) fn remove_by_seq(&mut self, id: AcbeId) {
+  self.cbentries.retain(|x| x.id != id);
+  self.entry_by_id.remove(&id);
  }
 
  pub fn get_cbentries(&self) -> &VecDeque<AppendedCBEntry> {
@@ -720,7 +780,7 @@ impl Clipboards {
 
  pub(crate) fn push_back(&mut self, cbentry: CBEntry) {
   let cbentry = Rc::new(RefCell::new(cbentry));
-  let id = self.seq_counter;
+  let id = self.seq_counter.inc();
   self.cbentries.push_back(AppendedCBEntry {
    appended_bin: true,
    appended_string: true,
@@ -728,7 +788,6 @@ impl Clipboards {
    id,
   });
   assert!(self.entry_by_id.insert(id, cbentry).is_none());
-  self.seq_counter.inc();
  }
 
  pub(crate) fn get_last_entries(&self) -> &HashMap<CBType, AppendedCBEntry> {
@@ -787,5 +846,146 @@ mod tests {
   assert_eq!(Some("def".into()), x);
 
   // assert_eq!("abc", x.unwrap());
+ }
+}
+
+#[cfg(test)]
+mod clipboards_tests {
+ use super::*;
+
+ #[test]
+ fn test_insert_single_entry() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"hello".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 1);
+  assert!(clipboards.last_entries.contains_key(&CBType::Clipboard));
+  assert_eq!(clipboards.entry_by_id.len(), 1);
+ }
+
+ #[test]
+ fn test_insert_multiple_entries() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"second".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"third".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 1);
+  assert!(clipboards.last_entries.contains_key(&CBType::Clipboard));
+  assert_eq!(clipboards.entry_by_id.len(), 3);
+
+  let last = &clipboards.last_entries[&CBType::Clipboard];
+  assert_eq!(last.cbentry.borrow().get_data(), b"third");
+ }
+
+ #[test]
+ fn test_last_entries_updated_on_pop() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"second".to_vec()));
+
+  let last = &clipboards.last_entries[&CBType::Clipboard];
+  assert_eq!(last.cbentry.borrow().get_data(), b"second");
+ }
+
+ #[test]
+ fn test_insert_different_types_no_pop() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Primary, Some(b"first".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"second".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 2);
+ }
+
+ #[test]
+ fn test_insert_duplicate_no_duplicate() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"test".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"test".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 1);
+  assert_eq!(clipboards.entry_by_id.len(), 1);
+ }
+
+ #[test]
+ fn test_insert_different_cbtypes() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Primary, Some(b"primary".to_vec()));
+  clipboards.insert(&CBType::Secondary, Some(b"secondary".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"clipboard".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 3);
+  assert!(clipboards.last_entries.contains_key(&CBType::Primary));
+  assert!(clipboards.last_entries.contains_key(&CBType::Secondary));
+  assert!(clipboards.last_entries.contains_key(&CBType::Clipboard));
+
+  assert_eq!(
+   clipboards.last_entries[&CBType::Primary]
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"primary"
+  );
+  assert_eq!(
+   clipboards.last_entries[&CBType::Secondary]
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"secondary"
+  );
+  assert_eq!(
+   clipboards.last_entries[&CBType::Clipboard]
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"clipboard"
+  );
+ }
+
+ #[test]
+ fn test_id_sequential_assignment() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
+  let first_id = clipboards.cbentries.front().unwrap().id;
+  assert_eq!(first_id.as_usize(), 0);
+
+  clipboards.insert(&CBType::Primary, Some(b"second".to_vec()));
+  let second_id = clipboards.cbentries.front().unwrap().id;
+  assert_eq!(second_id.as_usize(), 1);
+
+  clipboards.insert(&CBType::Clipboard, Some(b"third".to_vec()));
+  let third_id = clipboards.cbentries.front().unwrap().id;
+  assert_eq!(third_id.as_usize(), 2);
+ }
+
+ #[test]
+ fn test_get_entry_by_id() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"test".to_vec()));
+
+  let entry_id = clipboards.cbentries.front().unwrap().id;
+  let entry = clipboards.get_entry_by_id(entry_id);
+
+  assert!(entry.is_some());
+  assert_eq!(entry.unwrap().borrow().get_data(), b"test");
+ }
+
+ #[test]
+ fn test_rapid_insert_pops_front() {
+  let mut clipboards = Clipboards::new();
+  clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
+  clipboards.insert(&CBType::Clipboard, Some(b"second".to_vec()));
+
+  assert_eq!(clipboards.cbentries.len(), 1);
+  assert_eq!(
+   clipboards
+    .cbentries
+    .front()
+    .unwrap()
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"second"
+  );
  }
 }
