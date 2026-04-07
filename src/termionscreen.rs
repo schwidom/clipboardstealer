@@ -125,7 +125,7 @@ fn render_scroller_lines2<T>(
 }
 
 #[cfg(test)]
-mod tests {
+mod unicode_tests {
  // use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
  use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk
 
@@ -238,7 +238,7 @@ fn trim_text_to_rect_with(text: &str, rect: Rect) -> String {
 }
 
 #[cfg(test)]
-mod test {
+mod unicode_with_test {
  use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
  use super::apply_horizontal_offset;

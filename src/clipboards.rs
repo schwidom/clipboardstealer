@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::ops::Deref;
 // use std::ops::AddAssign;
 use std::path::Path;
 use std::rc::Rc;
@@ -440,17 +441,6 @@ impl AcbeId {
  }
 }
 
-// impl AddAssign for AcbeId {
-//  fn add_assign(&mut self, rhs: Self) {
-//   self.0 = rhs.0;
-//  }
-// }
-
-// #[cfg(test)]
-// mod tests2
-// {
-// }
-
 #[derive(Debug, Clone)]
 pub struct AppendedCBEntry {
  pub appended_bin: bool,
@@ -517,6 +507,7 @@ impl Clipboards {
  pub(crate) fn insert(&mut self, cbtype: &CBType, string: Option<Vec<u8>>) {
   if let Some(s) = string {
    let mut insert: bool = true;
+   let mut fixation_is_active = false;
 
    {
     let cf: &ClipboardFixation = &self.cfmap[cbtype];
@@ -530,6 +521,7 @@ impl Clipboards {
       sleep_default();
       // TODO : configurable rewrite delay
       cf.restore();
+      fixation_is_active = true;
      }
     }
    }
@@ -569,18 +561,20 @@ impl Clipboards {
      },
     );
     // self.last_entries.get_mut(&cbentry.borrow().cbtype) = cbentry;
-    drop(id);
+    // drop(id); // does nothing
     // second ID avoids conflicts
-    let id = self.seq_counter.inc();
-    self.last_entries.insert(
-     cbentry.borrow().get_cbtype(),
-     AppendedCBEntry {
-      appended_bin: false,
-      appended_string: false,
-      cbentry: cbentry.clone(),
-      id,
-     },
-    );
+    if !fixation_is_active {
+     let id = self.seq_counter.inc();
+     self.last_entries.insert(
+      cbentry.borrow().get_cbtype(),
+      AppendedCBEntry {
+       appended_bin: false,
+       appended_string: false,
+       cbentry: cbentry.clone(),
+       id,
+      },
+     );
+    }
    }
   }
  }
@@ -694,7 +688,9 @@ impl Clipboards {
    .cfmap
    .iter()
    .filter(|x| match &x.1.fixation {
+    // NOTE : keep both alternatives here
     Some(f) => Rc::<RefCell<CBEntry>>::ptr_eq(&f.cbentry, cbentry),
+    // Some(f) => f.cbentry.borrow().get_data() == cbentry.borrow().get_data(),
     None => false,
    })
    .count()
@@ -813,7 +809,7 @@ impl Clipboards {
 }
 
 #[cfg(test)]
-mod tests {
+mod crw_tests {
  use super::ClipboardReaderWriter;
  use std::{
   sync::Mutex,
@@ -868,6 +864,8 @@ mod tests {
 
 #[cfg(test)]
 mod clipboards_tests {
+ use std::cell::Ref;
+
  use super::*;
 
  #[test]
@@ -1001,6 +999,119 @@ mod clipboards_tests {
     .borrow()
     .get_data(),
    b"second"
+  );
+ }
+
+ impl Clipboards {
+  fn test_get_cbentries_data(&self) -> Vec<Vec<u8>> {
+   self
+    .get_cbentries()
+    .iter()
+    .map(|x| x.1.cbentry.borrow().get_data().clone())
+    .collect::<Vec<_>>()
+  }
+  // fn test_get_entries_refs(&self) -> Vec<Ref<'_,Vec<u8>>> {
+  //  self
+  //   .get_cbentries()
+  //   .iter()
+  //   .map(|x| Ref::map( x.1.cbentry.borrow(), |c| c.get_data()))
+  //   .collect::<Vec<_>>()
+  // }
+
+  fn test_get_acbe(&self) -> Vec<AppendedCBEntry> {
+   self
+    .get_cbentries()
+    .iter()
+    .map(|x| x.1.clone())
+    .collect::<Vec<_>>()
+  }
+ }
+
+ #[test]
+ fn test_fixation_handling() {
+  let mut clipboards = Clipboards::new();
+  {
+   // TODO : ggf. vereinfachen
+   let x = clipboards.cfmap.get(&CBType::Clipboard);
+   assert!(x.is_some());
+  }
+  clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
+  assert_eq!(clipboards.cbentries.len(), 1);
+  assert_eq!(clipboards.test_get_cbentries_data(), [b"first"]);
+
+  // let appended_cbentry = {
+  //  let appended_cbentry_uw = clipboards.cbentries.get(&AcbeId(0)).unwrap();
+  //  appended_cbentry_uw.clone()
+  // };
+
+  clipboards.insert(&CBType::Clipboard, Some(b"second".to_vec()));
+  assert_eq!(clipboards.cbentries.len(), 1); // TODO
+  assert_eq!(clipboards.test_get_cbentries_data(), [b"second"]);
+  std::thread::sleep(Duration::from_millis(500)); // TODO : shorter variation with cfg(test), not time dependend
+  clipboards.insert(&CBType::Clipboard, Some(b"third".to_vec()));
+  assert_eq!(clipboards.cbentries.len(), 2);
+  // assert_eq!(clipboards.test_get_entries(), &[&b"third"[..], b"second"]);
+  assert_eq!(clipboards.test_get_cbentries_data(), &[&b"second"[..], b"third"]); // ???
+
+  {
+   let x = clipboards.cfmap.get(&CBType::Clipboard);
+   assert!(x.is_some());
+  }
+  {
+   let x = clipboards
+    .cfmap
+    .get(&CBType::Clipboard)
+    .unwrap()
+    .fixation
+    .as_ref();
+   assert!(x.is_none());
+  }
+  // clipboards.toggle_fixation(&appended_cbentry);
+  clipboards.toggle_fixation(clipboards.test_get_acbe().last().as_ref().unwrap());
+  assert_eq!(clipboards.cbentries.len(), 2);
+
+  assert_eq!(clipboards.test_get_cbentries_data(), &[&b"second"[..], b"third"]); // ???
+
+  // gmcahj66pq
+  assert_eq!(
+   clipboards
+    .get_last_entries()
+    .get(&CBType::Clipboard)
+    .unwrap()
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"third"
+  );
+
+  std::thread::sleep(Duration::from_millis(500)); // TODO : shorter variation with cfg(test), not time dependend
+  clipboards.insert(&CBType::Clipboard, Some(b"fourth".to_vec()));
+  {
+   let x = clipboards
+    .cfmap
+    .get(&CBType::Clipboard)
+    .unwrap()
+    .fixation
+    .as_ref()
+    .unwrap()
+    .cbentry
+    .borrow()
+    .get_data()
+    .clone();
+   assert_eq!(x, b"third"[..]);
+  }
+  assert_eq!(clipboards.test_get_cbentries_data(), &[&b"second"[..], b"third", b"fourth"]);
+  // ???
+  // gmcahj66pq
+  assert_eq!(
+   clipboards
+    .get_last_entries()
+    .get(&CBType::Clipboard)
+    .unwrap()
+    .cbentry
+    .borrow()
+    .get_data(),
+   b"third"
   );
  }
 }
