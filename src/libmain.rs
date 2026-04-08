@@ -527,7 +527,7 @@ impl AppStateReceiverData {
     .map(|x| x.unwrap())
     .collect::<Vec<_>>();
 
-   svec.reverse();
+   // svec.reverse();
 
    for cbentry in svec {
     cbs.push_back(cbentry);
@@ -558,7 +558,7 @@ impl AppStateReceiverData {
     .map(|x| x.unwrap())
     .collect::<Vec<_>>();
 
-   svec.reverse();
+   // svec.reverse();
 
    for string_entry in svec {
     let cbentry = CBEntry::from_json_entry(string_entry);
