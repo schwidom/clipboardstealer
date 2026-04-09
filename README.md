@@ -1,5 +1,5 @@
 
-![Animation](https://raw.githubusercontent.com/schwidom/assets/refs/heads/main/xclip-tui/presentation_4.0.0.gif)
+![Animation](https://raw.githubusercontent.com/schwidom/assets/refs/heads/main/xclip-tui/presentation_4.2.1.gif)
 
 # Usage: clipboardstealer [OPTIONS]
 
@@ -20,13 +20,18 @@
 - `--editor`
   - interprets the `EDITOR` environment variable always as editor
 - `--convert-bin-ndjson <CONVERT_BIN_NDJSON>`
-  -   converts bin ndjson to string ndjson (input file)
+  - converts bin ndjson to string ndjson (input file)
 - `--to-string-ndjson <TO_STRING_NDJSON>`
-  -   output file for converted bin ndjson
+  - output file for converted bin ndjson
 - `--convert-string-ndjson <CONVERT_STRING_NDJSON>`
-  -   converts string ndjson to bin ndjson (input file)
+  - converts string ndjson to bin ndjson (input file)
 - `--to-bin-ndjson <TO_BIN_NDJSON>`
-  -   output file for converted string ndjson
+  - output file for converted string ndjson
+
+- `-c, --color <COLOR>`
+  - select color theme (default, nord, solarized, dracula)
+- `--color-themes`
+  - list available color themes
 
 - `--debug`
   - provides debug information
