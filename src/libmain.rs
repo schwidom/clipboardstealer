@@ -142,6 +142,10 @@ pub struct Args {
  pub(crate) debug: bool,
  #[arg(long, help = "writes debug information into file")]
  pub(crate) debugfile: Option<String>,
+ #[arg(short, long, default_value_t = crate::color_theme::ColorTheme::default(), help = "select color theme (default, nord, solarized, dracula)")]
+ pub(crate) color_theme: crate::color_theme::ColorTheme,
+ #[arg(long, default_value_t = false, help = "list available color themes")]
+ pub(crate) color_themes: bool,
 }
 
 #[derive(Debug)]
@@ -863,6 +867,12 @@ pub fn main() {
  let args = Args::parse();
  // q3jhk95ow6
  if args.load_and_append_ndjson_bin.is_some() && args.append_ndjson_bin.is_some() {
+  eprintln!("Error: --load-and-append-ndjson-bin cannot be used together with --append-ndjson-bin");
+  std::process::exit(1);
+ }
+
+ // q3jhk95ow6
+ if args.load_and_append_ndjson.is_some() && args.append_ndjson.is_some() {
   eprintln!("Error: --load-and-append-ndjson cannot be used together with --append-ndjson");
   std::process::exit(1);
  }
@@ -885,6 +895,15 @@ pub fn main() {
    eprintln!("exiting");
    return;
   }
+ }
+
+ // Handle --color-themes early exit
+ if args.color_themes {
+  println!("Available color themes:");
+  for (name, _theme) in crate::color_theme::ColorTheme::all_themes() {
+   println!("  {}", name);
+  }
+  return;
  }
 
  {

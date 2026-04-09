@@ -1,4 +1,5 @@
 pub mod clipboards;
+pub mod color_theme;
 pub mod config;
 pub mod constants;
 pub mod debug;

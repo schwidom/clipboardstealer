@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 use crate::clipboards::AppendedCBEntry;
 use crate::clipboards::{cbentry::CBEntry, AcbeId, CBType};
+use crate::color_theme::ThemeColors;
 use crate::config::{self, Config};
 use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
 use crate::event::MyEvent;
@@ -27,7 +28,8 @@ use crate::tools::{flatline, tabfix};
 use enum_iterator::all;
 use mktemp::Temp;
 use ratatui::layout::{Alignment, Margin, Rect};
-use ratatui::text::{Line, Text};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
 use ratatui::DefaultTerminal;
 use termion::event::{Event, Key};
@@ -417,6 +419,35 @@ fn apply_horizontal_offset_line2<'a>(line1: &'a str, line2: &'a str, offset: usi
  }
 }
 
+fn apply_horizontal_offset_line3<'a>(
+ line1: &'a str,
+ line2: &'a str,
+ offset: usize,
+) -> (String, String) {
+ {
+  // let line = line1.to_string() + line2;
+  let offset = offset.saturating_sub(line1.width());
+  let mut display_width = 0;
+  let mut byte_offset = 0;
+  for (i, c) in line2.char_indices() {
+   assert_eq!(i, byte_offset);
+   let char_width = c.width().unwrap_or(0);
+   if display_width + char_width <= offset {
+    display_width += char_width;
+    byte_offset = i + c.len_utf8();
+   } else {
+    byte_offset = i;
+    break;
+   }
+  }
+  if byte_offset >= line2.len() {
+   (line1.to_string(), "".into())
+  } else {
+   (line1.to_string(), line2[byte_offset..].to_string())
+  }
+ }
+}
+
 fn apply_horizontal_offset(text: &str, offset: usize) -> String {
  if offset == 0 {
   // geht auch ohne
@@ -447,6 +478,24 @@ fn apply_hoffset_and_trim_line2<'a>(
  // let offset_text = apply_horizontal_offset_line(text, hoffset);
  let offset_text = apply_horizontal_offset_line2(text1, text2, hoffset);
  truncate_before_or_at_display_width(&offset_text, max_width).to_string()
+}
+
+fn apply_hoffset_and_trim_line3<'a>(
+ text1: &'a str,
+ text2: &'a str,
+ rect: Rect,
+ hoffset: usize,
+) -> (String, String) {
+ let max_width = rect.width as usize;
+ // let max_height = rect.height as usize;
+ // let offset_text = apply_horizontal_offset_line(text, hoffset);
+ let (offset_text1, offset_text2) = apply_horizontal_offset_line3(text1, text2, hoffset);
+ let w = offset_text1.width();
+ let max_width = max_width.saturating_sub(w);
+ (
+  offset_text1.to_string(),
+  truncate_before_or_at_display_width(&offset_text2, max_width).to_string(),
+ )
 }
 
 fn apply_hoffset_and_trim(text: &str, rect: Rect, hoffset: usize) -> String {
@@ -503,6 +552,7 @@ struct TwoScreenDefaultWidget<'a> {
  active_area: ActiveArea,
  hoffset_main: usize,
  hoffset_second: usize,
+ theme_colors: ThemeColors,
 }
 
 impl<'a> Widget for TwoScreenDefaultWidget<'a> {
@@ -526,20 +576,39 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
+  let main_border_style = if is_main_active {
+   if let Some(color) = self.theme_colors.border {
+    Style::new().fg(color)
+   } else {
+    Style::new()
+   }
+  } else {
+   if let Some(color) = self.theme_colors.border_inactive {
+    Style::new().fg(color)
+   } else {
+    Style::new()
+   }
+  };
+
   let block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
    .title(Line::from(top_right_line_text).right_aligned())
    .title_bottom(Line::from(bottom_center_line_text).centered())
-   .border_type(BorderType::Rounded);
-
-  // if !is_main_active {
-  //  block = block.border_style(Style::new().fg(Color::Gray));
-  // }
+   .border_type(BorderType::Rounded)
+   .border_style(main_border_style);
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(area); // avoids crash
+
+  let line_number_style = if let Some(color) = self.theme_colors.line_number {
+   Style::new().fg(color)
+  } else {
+   Style::new()
+  };
+  let text_style =
+   if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
 
   let all_lines = match self.all_lines {
    R::Old(all_lines) => all_lines
@@ -547,26 +616,32 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
     .map(|x| {
      let x = tabfix(x);
      if self.wrapped1 {
-      x
+      Line::from(Span::raw(x))
      } else {
-      apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string()
+      let trimmed = apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string();
+      Line::from(Span::raw(trimmed))
      }
     })
-    .collect::<Vec<_>>()
-    .join("\n"),
+    .collect::<Vec<_>>(),
    R::New(all_lines) => all_lines
     .iter()
     .map(|(x1, x2)| {
      let x1 = tabfix(x1);
      let x2 = tabfix(x2);
-     if self.wrapped1 {
-      x1 + &x2
+
+     let (l1, l2) = if self.wrapped1 {
+      (x1, x2)
      } else {
-      apply_hoffset_and_trim_line2(&x1, &x2, safe_area, self.hoffset_main).to_string()
-     }
+      let res = apply_hoffset_and_trim_line3(&x1, &x2, safe_area, self.hoffset_main);
+      (res.0.to_string(), res.1.to_string())
+     };
+
+     Line::from(vec![
+      Span::styled(l1, line_number_style),
+      Span::styled(l2, text_style),
+     ])
     })
-    .collect::<Vec<_>>()
-    .join("\n"),
+    .collect::<Vec<_>>(),
   };
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
@@ -576,11 +651,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   // weue806j1y
   let paragraph = if !self.wrapped1 { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
 
-  Text::raw(self.helpline).render(*self.rv.pl.get_title_area(), buf);
-  // Text::raw(self.all_lines).render(self.rv.pl.main_area.inner(Margin::new(0, 1)), buf);
-  // block.render(self.rv.pl.main_area.inner(Margin::new(0, 1)), buf);
-  // paragraph.render(rect1, buf);
-  // Clear.render(safe_area, buf); // doesn't fix the tab problem
+  let menu_style =
+   if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
+  Text::styled(self.helpline, menu_style).render(*self.rv.pl.get_title_area(), buf);
   paragraph.render(safe_area, buf);
 
   let is_second_active = self.active_area == ActiveArea::Second;
@@ -597,14 +670,25 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // &format!(" l({})", self.line_count2);
 
+   let second_border_style = if is_second_active {
+    if let Some(color) = self.theme_colors.border {
+     Style::new().fg(color)
+    } else {
+     Style::new()
+    }
+   } else {
+    if let Some(color) = self.theme_colors.border_inactive {
+     Style::new().fg(color)
+    } else {
+     Style::new()
+    }
+   };
+
    let block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
-    .border_type(BorderType::Rounded);
-
-   // if !is_second_active {
-   //  block2 = block2.border_style(Style::new().fg(Color::Gray));
-   // }
+    .border_type(BorderType::Rounded)
+    .border_style(second_border_style);
 
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
@@ -616,27 +700,33 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
      .map(|x| {
       let x = tabfix(x);
       if self.wrapped2 {
-       x
+       Line::from(Span::raw(x))
       } else {
-       apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string()
+       let trimmed = apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string();
+       Line::from(Span::raw(trimmed))
       }
      })
-     .collect::<Vec<_>>()
-     .join("\n"),
+     .collect::<Vec<_>>(),
 
     R::New(all_lines2) => all_lines2
      .iter()
      .map(|(x1, x2)| {
       let x1 = tabfix(x1);
       let x2 = tabfix(x2);
-      if self.wrapped1 {
-       x1 + &x2
+
+      let (l1, l2) = if self.wrapped2 {
+       (x1, x2)
       } else {
-       apply_hoffset_and_trim_line2(&x1, &x2, safe_area, self.hoffset_second).to_string()
-      }
+       let res = apply_hoffset_and_trim_line3(&x1, &x2, safe_area2, self.hoffset_second);
+       (res.0.to_string(), res.1.to_string())
+      };
+
+      Line::from(vec![
+       Span::styled(l1, line_number_style),
+       Span::styled(l2, text_style),
+      ])
      })
-     .collect::<Vec<_>>()
-     .join("\n"),
+     .collect::<Vec<_>>(),
    };
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
@@ -649,14 +739,19 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(area), buf);
   let statusline = self.statusline_heap.borrow();
+  let status_style =
+   if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
+    .style(status_style)
     .render(self.rv.pl.get_status_area().intersection(area), buf);
   } else if self.delete_confirm_mode.is_some() {
    Paragraph::new("delete entry? (y/n) (Esc)")
+    .style(status_style)
     .render(self.rv.pl.get_status_area().intersection(area), buf);
   } else if let Some(status_msg) = statusline.peek() {
    Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()) + " (Esc)")
+    .style(status_style)
     .render(self.rv.pl.get_status_area().intersection(area), buf);
   }
  }
@@ -1137,6 +1232,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      active_area: self.active_area,
      hoffset_main: self.scroller_main.get_hoffset(),
      hoffset_second: self.scroller_second.get_hoffset(),
+     theme_colors: self.config.color_theme.get_colors(),
     };
 
     terminal
@@ -1523,6 +1619,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     active_area: ActiveArea::Main,
     hoffset_main: self.scroller.get_hoffset(),
     hoffset_second: 0,
+    theme_colors: self.config.color_theme.get_colors(),
    };
 
    terminal

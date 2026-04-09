@@ -41,7 +41,10 @@ Options:
           converts string ndjson to bin ndjson (input file)
       --to-bin-ndjson <TO_BIN_NDJSON>
           output file for converted string ndjson
-
+      -c, --color <COLOR>
+          select color theme (default, nord, solarized, dracula)
+      --color-themes
+          list available color themes
       --debug
           provides debug information
       --debugfile <DEBUGFILE>
@@ -126,6 +129,7 @@ pub struct Config {
  pub append_ndjson_string: Option<String>,
  pub load_ndjson_string: Vec<String>,
  pub editor: bool,
+ pub color_theme: crate::color_theme::ColorTheme,
  pub suspend_threads: RwLock<()>,
  pub suspended_threads: AtomicBool,
 }
@@ -162,6 +166,7 @@ impl Config {
    (args.append_ndjson_bin.clone(), args.load_ndjson_bin.clone())
   };
 
+  // q3jhk95ow6
   let (append_ndjson_string, load_ndjson_string) = if let Some(file) = &args.load_and_append_ndjson
   {
    let mut loads = args.load_ndjson.clone();
@@ -179,6 +184,7 @@ impl Config {
    append_ndjson_string,
    load_ndjson_string,
    editor: args.editor,
+   color_theme: args.color_theme,
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
   }
