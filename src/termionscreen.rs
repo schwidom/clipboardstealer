@@ -590,13 +590,20 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    }
   };
 
+  let main_bg_style = if let Some(color) = self.theme_colors.window_bg {
+   Style::new().bg(color)
+  } else {
+   Style::new()
+  };
+
   let block = Block::bordered()
    .title(title)
    .title_alignment(Alignment::Left)
    .title(Line::from(top_right_line_text).right_aligned())
    .title_bottom(Line::from(bottom_center_line_text).centered())
    .border_type(BorderType::Rounded)
-   .border_style(main_border_style);
+   .border_style(main_border_style)
+   .style(main_bg_style);
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
@@ -684,11 +691,18 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
     }
    };
 
+   let second_bg_style = if let Some(color) = self.theme_colors.window_bg {
+    Style::new().bg(color)
+   } else {
+    Style::new()
+   };
+
    let block2 = Block::bordered()
     .title(title2)
     .title_alignment(Alignment::Left)
     .border_type(BorderType::Rounded)
-    .border_style(second_border_style);
+    .border_style(second_border_style)
+    .style(second_bg_style);
 
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;

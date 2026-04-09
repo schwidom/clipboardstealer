@@ -51,34 +51,34 @@ impl ColorTheme {
   match self {
    ColorTheme::Default => ThemeColors::default(),
    ColorTheme::Nord => ThemeColors {
-    window_bg: None,
-    window_fg: None,
+    window_bg: Some(Color::Rgb(0x29, 0x2E, 0x3A)), // noticeably darker
+    window_fg: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
     cursor: Some(Color::Rgb(0xBF, 0x61, 0x6A)),
     line_number: Some(Color::Rgb(0x4C, 0x56, 0x6A)),
     text: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
     border: Some(Color::Rgb(0x81, 0xA1, 0xC1)),
     border_inactive: Some(Color::Rgb(0x4C, 0x56, 0x6A)),
-    menu: Some(Color::Rgb(0x3B, 0x42, 0x52)),
+    menu: Some(Color::Rgb(0x43, 0x4C, 0x5E)), // brighter, uses a standard Nord mid-tone
    },
    ColorTheme::Solarized => ThemeColors {
-    window_bg: None,
-    window_fg: None,
+    window_bg: Some(Color::Rgb(0x00, 0x24, 0x2F)), // deeper base
+    window_fg: Some(Color::Rgb(0x83, 0x94, 0x96)),
     cursor: Some(Color::Rgb(0xB5, 0x89, 0x00)),
     line_number: Some(Color::Rgb(0x58, 0x6E, 0x75)),
     text: Some(Color::Rgb(0x83, 0x94, 0x96)),
     border: Some(Color::Rgb(0x26, 0x8B, 0xD2)),
     border_inactive: Some(Color::Rgb(0x58, 0x6E, 0x75)),
-    menu: Some(Color::Rgb(0x07, 0x36, 0x42)),
+    menu: Some(Color::Rgb(0x0F, 0x42, 0x51)), // brighter and more visible
    },
    ColorTheme::Dracula => ThemeColors {
-    window_bg: None,
-    window_fg: None,
+    window_bg: Some(Color::Rgb(0x22, 0x24, 0x30)), // deeper purple-black tone
+    window_fg: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     cursor: Some(Color::Rgb(0xFF, 0x79, 0xC6)),
     line_number: Some(Color::Rgb(0x62, 0x72, 0xA4)),
     text: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     border: Some(Color::Rgb(0xBD, 0x93, 0xF9)),
     border_inactive: Some(Color::Rgb(0x62, 0x72, 0xA4)),
-    menu: Some(Color::Rgb(0x44, 0x47, 0x5A)),
+    menu: Some(Color::Rgb(0x4D, 0x51, 0x66)), // brighter selection-like tone
    },
   }
  }
