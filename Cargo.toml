@@ -1,6 +1,6 @@
 [package]
 name = "clipboardstealer"
-version = "4.3.1"
+version = "4.3.2"
 edition = "2021"
 authors = ["Frank Schwidom"]
 description = "X11 clipboard manager which enforces the user choice"

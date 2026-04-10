@@ -814,7 +814,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
        &(String::new() + &x.cursor + &x.line_number),
        &x.text,
        safe_area,
-       self.hoffset_main,
+       self.hoffset_second,
       );
 
       Line::from(vec![
