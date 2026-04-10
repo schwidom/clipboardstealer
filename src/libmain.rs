@@ -26,26 +26,25 @@ use xcb_1::{
 use std::{
  cell::RefCell,
  cmp::min,
- collections::{BinaryHeap, HashMap, HashSet},
+ collections::{HashMap, HashSet},
  env::var_os,
  ffi::OsString,
  fs::read_to_string,
- io::Write,
+ io::{stdin, stdout, Write},
  os::fd::AsFd,
  path::Path,
  rc::Rc,
  sync::{
+  atomic::{AtomicBool, AtomicUsize, Ordering},
   mpsc::{self, Receiver, Sender},
-  RwLockWriteGuard,
+  Arc, Mutex, RwLockWriteGuard,
  },
+ thread,
  thread::JoinHandle,
  time::Duration,
 };
 
-use std::{
- io::{stdin, stdout},
- thread,
-};
+use crossbeam_skiplist::SkipMap;
 
 use crate::{
  clipboards::*,
@@ -54,6 +53,7 @@ use crate::{
  debug::*,
  event::MyEvent,
  termionscreen::{TermionScreenFirstPage, TermionScreenPainter},
+ tools::MyTime,
 };
 
 use nu_ansi_term::AnsiGenericString;
@@ -61,11 +61,6 @@ use nu_ansi_term::AnsiGenericString;
 use tracing::trace;
 
 use clap::Parser;
-
-use std::sync::{
- atomic::{AtomicBool, Ordering},
- Arc, Mutex,
-};
 
 use crate::clipboards::cbentry::CBEntry;
 use crate::clipboards::cbentry::CBEntryString;
@@ -478,60 +473,144 @@ pub enum StatusSeverity {
  Error = 2,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct StatusMessage {
  pub severity: StatusSeverity,
+ pub time: MyTime,
+ pub seqnr: usize,
  pub text: String,
 }
 
-impl Ord for StatusMessage {
- fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-  self.severity.cmp(&other.severity)
+#[derive(Default)]
+pub struct StatusSeqGenerator(AtomicUsize);
+
+impl StatusSeqGenerator {
+ pub fn next(&self) -> usize {
+  self.0.fetch_add(1, Ordering::Relaxed)
  }
 }
 
-impl PartialOrd for StatusMessage {
+#[derive(Clone, Debug)]
+pub struct StatusKey {
+ pub severity: StatusSeverity,
+ pub time: MyTime,
+ pub seqnr: usize,
+}
+
+impl Ord for StatusKey {
+ fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+  other
+   .severity
+   .cmp(&self.severity)
+   .then_with(|| other.time.cmp(&self.time))
+   .then_with(|| other.seqnr.cmp(&self.seqnr))
+ }
+}
+
+impl PartialOrd for StatusKey {
  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
   Some(self.cmp(other))
  }
 }
 
+impl Eq for StatusKey {}
+
+impl PartialEq for StatusKey {
+ fn eq(&self, other: &Self) -> bool {
+  self.severity == other.severity && self.time == other.time && self.seqnr == other.seqnr
+ }
+}
+
+pub struct StatusLineHeap {
+ map: Arc<SkipMap<StatusKey, StatusMessage>>,
+ seq_gen: Arc<StatusSeqGenerator>,
+}
+
+impl StatusLineHeap {
+ pub fn new() -> Self {
+  Self {
+   map: Arc::new(SkipMap::new()),
+   seq_gen: Arc::new(StatusSeqGenerator::default()),
+  }
+ }
+
+ pub fn default() -> Self {
+  Self::new()
+ }
+
+ pub fn push(&self, severity: StatusSeverity, text: String) {
+  let time = MyTime::now();
+  let seqnr = self.seq_gen.next();
+  let key = StatusKey {
+   severity,
+   time: time.clone(),
+   seqnr,
+  };
+  let _entry = self.map.insert(
+   key,
+   StatusMessage {
+    severity,
+    time,
+    seqnr,
+    text,
+   },
+  );
+ }
+
+ pub fn pop(&self) -> Option<StatusMessage> {
+  (*self.map).pop_front().map(|entry| entry.value().clone())
+ }
+
+ pub fn peek(&self) -> Option<StatusMessage> {
+  (*self.map).front().map(|node| node.value().clone())
+ }
+
+ pub fn len(&self) -> usize {
+  self.map.len()
+ }
+
+ pub fn is_empty(&self) -> bool {
+  self.map.is_empty()
+ }
+}
+
+impl Clone for StatusLineHeap {
+ fn clone(&self) -> Self {
+  Self {
+   map: Arc::clone(&self.map),
+   seq_gen: Arc::clone(&self.seq_gen),
+  }
+ }
+}
+
 pub struct AppStateReceiverData {
  pub cbs: Clipboards,
- pub statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ pub statusline_heap: StatusLineHeap,
  pub sender: Sender<MyEvent>,
 }
 
 impl AppStateReceiverData {
  pub fn new(config: &'static Config, sender: Sender<MyEvent>) -> Self {
   let mut cbs = Clipboards::new();
-  let mut statusline_heap = BinaryHeap::new();
+  let statusline_heap = StatusLineHeap::new();
   for load_ndjson in &config.load_ndjson_bin {
    let p_load_ndjson = Path::new(load_ndjson);
-   // no error message if the file don't already exist but is intended to get created
    if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson_bin.as_ref() {
     continue;
    }
    let content = read_to_string(p_load_ndjson);
-   let content = match content {
-    Ok(content) => content,
-    Err(err) => {
-     let err_msg = format!("Failed to open load file: {:?} - {}", p_load_ndjson, err);
-     eprintln!("{}", err_msg);
-     statusline_heap.push(StatusMessage {
-      severity: StatusSeverity::Warning,
-      text: err_msg,
-     });
-     continue;
-    }
-   };
+   if let Err(err) = content {
+    let err_msg = format!("Failed to open load file: {:?} - {}", p_load_ndjson, err);
+    eprintln!("{}", err_msg);
+    statusline_heap.push(StatusSeverity::Warning, err_msg);
+    continue;
+   }
+   let content = content.unwrap();
    let deserializer = serde_json::Deserializer::from_str(&content);
-   let mut svec: Vec<CBEntry> = deserializer
+   let svec: Vec<CBEntry> = deserializer
     .into_iter::<CBEntry>()
     .map(|x| x.unwrap())
     .collect::<Vec<_>>();
-
-   // svec.reverse();
 
    for cbentry in svec {
     cbs.push_back(cbentry);
@@ -539,30 +618,22 @@ impl AppStateReceiverData {
   }
   for load_ndjson in &config.load_ndjson_string {
    let p_load_ndjson = Path::new(load_ndjson);
-   // no error message if the file don't already exist but is intended to get created
    if !p_load_ndjson.is_file() && Some(load_ndjson) == config.append_ndjson_string.as_ref() {
     continue;
    }
    let content = read_to_string(p_load_ndjson);
-   let content = match content {
-    Ok(content) => content,
-    Err(err) => {
-     let err_msg = format!("Failed to open load ndjson file: {:?} - {}", p_load_ndjson, err);
-     eprintln!("{}", err_msg);
-     statusline_heap.push(StatusMessage {
-      severity: StatusSeverity::Warning,
-      text: err_msg,
-     });
-     continue;
-    }
-   };
+   if let Err(err) = content {
+    let err_msg = format!("Failed to open load ndjson file: {:?} - {}", p_load_ndjson, err);
+    eprintln!("{}", err_msg);
+    statusline_heap.push(StatusSeverity::Warning, err_msg);
+    continue;
+   }
+   let content = content.unwrap();
    let deserializer = serde_json::Deserializer::from_str(&content);
-   let mut svec: Vec<CBEntryString> = deserializer
+   let svec: Vec<CBEntryString> = deserializer
     .into_iter::<CBEntryString>()
     .map(|x| x.unwrap())
     .collect::<Vec<_>>();
-
-   // svec.reverse();
 
    for string_entry in svec {
     let cbentry = CBEntry::from_json_entry(string_entry);
@@ -571,7 +642,7 @@ impl AppStateReceiverData {
   }
   Self {
    cbs,
-   statusline_heap: Rc::new(RefCell::new(statusline_heap)),
+   statusline_heap,
    sender,
   }
  }
@@ -716,8 +787,7 @@ impl<'a> AppStateReceiver<'a> {
    drop(current_painter);
    if let MyEvent::Termion(Event::Key(Key::Esc)) = ev {
     if !is_sticky && !matches!(next_tsp, crate::termionscreen::NextTsp::IgnoreBasicEvents) {
-     let mut statusline = self.data.statusline_heap.borrow_mut();
-     statusline.pop();
+     self.data.statusline_heap.pop();
     }
    }
    let mut ignore_basic_events = false;
@@ -797,18 +867,18 @@ impl<'a> AppStateReceiver<'a> {
       MyEvent::Tick => {
        if let Some(append_filename_string) = &self.config.append_ndjson_bin {
         if let Err(err_msg) = self.data.cbs.append_ndjson_bin(append_filename_string) {
-         self.data.statusline_heap.borrow_mut().push(StatusMessage {
-          severity: StatusSeverity::Error,
-          text: err_msg,
-         });
+         self
+          .data
+          .statusline_heap
+          .push(StatusSeverity::Error, err_msg);
         }
        }
        if let Some(append_filename_string) = &self.config.append_ndjson_string {
         if let Err(err_msg) = self.data.cbs.append_ndjson_string(append_filename_string) {
-         self.data.statusline_heap.borrow_mut().push(StatusMessage {
-          severity: StatusSeverity::Error,
-          text: err_msg,
-         });
+         self
+          .data
+          .statusline_heap
+          .push(StatusSeverity::Error, err_msg);
         }
        }
       }
@@ -1083,4 +1153,47 @@ pub fn main() {
 
  // tljh.join(); // never!, that would block here, we don't want that
  // msjh.join(); // never!, that would block here, we don't want that
+}
+
+#[cfg(test)]
+mod tests {
+ use crate::libmain::{StatusLineHeap, StatusSeverity};
+
+ #[test]
+ fn test_statusline_1() {
+  let slh = StatusLineHeap::new();
+  slh.push(StatusSeverity::Error, "error".into());
+  assert_eq!(slh.peek().unwrap().text, "error");
+  slh.push(StatusSeverity::Warning, "warn".into());
+  assert_eq!(slh.peek().unwrap().text, "error");
+  slh.push(StatusSeverity::Info, "info".into());
+  assert_eq!(slh.peek().unwrap().text, "error");
+  assert_eq!(slh.pop().unwrap().text, "error");
+  assert_eq!(slh.pop().unwrap().text, "warn");
+  assert_eq!(slh.pop().unwrap().text, "info");
+ }
+
+ #[test]
+ fn test_statusline_2() {
+  let slh = StatusLineHeap::new();
+  slh.push(StatusSeverity::Info, "info".into());
+  assert_eq!(slh.peek().unwrap().text, "info");
+  slh.push(StatusSeverity::Warning, "warn".into());
+  assert_eq!(slh.peek().unwrap().text, "warn");
+  slh.push(StatusSeverity::Error, "error".into());
+  assert_eq!(slh.peek().unwrap().text, "error");
+  assert_eq!(slh.pop().unwrap().text, "error");
+  assert_eq!(slh.pop().unwrap().text, "warn");
+  assert_eq!(slh.pop().unwrap().text, "info");
+ }
+ #[test]
+ fn test_statusline_3() {
+  let slh = StatusLineHeap::new();
+  slh.push(StatusSeverity::Info, "info1".into());
+  assert_eq!(slh.peek().unwrap().text, "info1");
+  slh.push(StatusSeverity::Info, "info2".into());
+  assert_eq!(slh.peek().unwrap().text, "info2");
+  assert_eq!(slh.pop().unwrap().text, "info2");
+  assert_eq!(slh.pop().unwrap().text, "info1");
+ }
 }

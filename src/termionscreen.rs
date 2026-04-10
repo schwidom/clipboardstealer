@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ use crate::event::MyEvent;
 use crate::layout::Layout;
 use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLayoutTB};
 // use crate::libmain::SyncStuff;
-use crate::libmain::{AppStateReceiverData, StatusMessage, StatusSeverity};
+use crate::libmain::{AppStateReceiverData, StatusLineHeap, StatusSeverity};
 use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
@@ -547,7 +547,7 @@ struct TwoScreenDefaultWidget<'a> {
  line_count: usize,
  line_count2: Option<usize>,
  delete_confirm_mode: Option<AcbeId>,
- statusline_heap: Rc<RefCell<BinaryHeap<StatusMessage>>>,
+ statusline_heap: StatusLineHeap,
  paused: bool,
  active_area: ActiveArea,
  hoffset_main: usize,
@@ -752,7 +752,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    paragraph2.render(safe_area2, buf);
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(area), buf);
-  let statusline = self.statusline_heap.borrow();
+  let statusline = &self.statusline_heap;
   let status_style =
    if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
@@ -1241,7 +1241,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      // line_count2: selected_string.lines().count(),
      line_count2,
      delete_confirm_mode: self.delete_confirm_mode,
-     statusline_heap: Rc::clone(&assd.statusline_heap),
+     statusline_heap: assd.statusline_heap.clone(),
      paused: self.paused,
      active_area: self.active_area,
      hoffset_main: self.scroller_main.get_hoffset(),
@@ -1374,17 +1374,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         Ok(page) => return NextTsp::Stack(Rc::new(RefCell::new(page))),
         Err(e) => {
          eprintln!("Failed to create editor page: {}", e);
-         match assd.statusline_heap.try_borrow_mut() {
-          Ok(mut v) => v.push(StatusMessage {
-           severity: crate::libmain::StatusSeverity::Warning,
-           text: format!("Failed to create editor page: {}", e),
-          }),
-          Err(err) => {
-           trace!("Failed to create editor page: {}", e);
-           trace!("Failed to create editor page: {}", err);
-           trace!("Failed to open statusline heap: ");
-          }
-         }
+         assd
+          .statusline_heap
+          .push(StatusSeverity::Warning, format!("Failed to create editor page: {}", e));
          return NextTsp::NoNextTsp;
         }
        }
@@ -1404,10 +1396,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       } else if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
        match assd.cbs.get_entries().get(&acbe.id) {
         Some(_) => self.delete_confirm_mode = Some(acbe.id),
-        None => assd.statusline_heap.borrow_mut().push(StatusMessage {
-         severity: StatusSeverity::Info,
-         text: "not deletable".to_string(),
-        }),
+        None => assd
+         .statusline_heap
+         .push(StatusSeverity::Info, "not deletable".to_string()),
        }
       }
      }
@@ -1499,16 +1490,14 @@ impl TermionScreenPainter for TermionScreenEditorPage {
         entry.borrow_mut().set_data(&buf);
        }
       }
-      Err(err) => assd.statusline_heap.borrow_mut().push(StatusMessage {
-       severity: StatusSeverity::Error,
-       text: err.to_string(),
-      }),
+      Err(err) => assd
+       .statusline_heap
+       .push(StatusSeverity::Error, err.to_string()),
      };
     }
-    Err(err) => assd.statusline_heap.borrow_mut().push(StatusMessage {
-     severity: StatusSeverity::Error,
-     text: err.to_string(),
-    }),
+    Err(err) => assd
+     .statusline_heap
+     .push(StatusSeverity::Error, err.to_string()),
    };
   }
  }
@@ -1628,7 +1617,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     line_count: string_lines.len(),
     line_count2: None,
     delete_confirm_mode: None,
-    statusline_heap: Rc::clone(&assd.statusline_heap),
+    statusline_heap: assd.statusline_heap.clone(),
     paused: false,
     active_area: ActiveArea::Main,
     hoffset_main: self.scroller.get_hoffset(),
