@@ -1294,10 +1294,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        //  lines.push((layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"), "".to_string()));
        lines.push(LineStrings {
         cursor: cursor_star.to_string(),
-        line_number: "".to_string(),
-        text: layout
+        line_number: layout
          .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
          .to_string(),
+        text: "".to_string(),
        });
       }
       FilteredCbsEntries::Empty => {
