@@ -169,6 +169,32 @@ fn render_scroller_lines3<T>(
  lines
 }
 
+fn render_scroller_lines4<T>(
+ scroller: &mut Scroller,
+ items: &[T],
+ wrapped: bool,
+ _layout: &Layout,
+ formatter: impl Fn(&str, usize, usize, &T) -> LineStrings,
+) -> Vec<LineStrings> {
+ let numbers_width = (items.len() as f64).log10().ceil() as usize;
+ let mut lines = vec![];
+
+ for (idx, item) in items[scroller.get_safe_windowrange()].iter().enumerate() {
+  let is_cursor = match scroller.get_cursor() {
+   None => false,
+   Some(value) => idx == value,
+  };
+  let cursor_star = if is_cursor { ">" } else { " " };
+
+  // let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
+  let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
+  lines.push(if wrapped { line } else { line });
+
+  // lines.push(if true { line } else { layout.fixline(&line) });
+ }
+ lines
+}
+
 #[cfg(test)]
 mod unicode_tests {
  // use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
@@ -523,10 +549,27 @@ impl RatatuiVariables {
  }
 }
 
+struct LineStrings {
+ cursor: String,
+ line_number: String,
+ text: String,
+}
+
+impl LineStrings {
+ fn tabfix(&self) -> Self {
+  LineStrings {
+   cursor: tabfix(&self.cursor),
+   line_number: tabfix(&self.line_number),
+   text: tabfix(&self.text),
+  }
+ }
+}
+
 // refactoring
 enum R<'a> {
  Old(&'a [String]),
  New(&'a [(String, String)]),
+ New2(&'a [LineStrings]),
 }
 
 /// the TwoScreenDefaultWidget paints in the areas of the
@@ -609,6 +652,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(area); // avoids crash
 
+  let cursor_style =
+   if let Some(color) = self.theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
+
   let line_number_style = if let Some(color) = self.theme_colors.line_number {
    Style::new().fg(color)
   } else {
@@ -646,6 +692,25 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
      Line::from(vec![
       Span::styled(l1, line_number_style),
       Span::styled(l2, text_style),
+     ])
+    })
+    .collect::<Vec<_>>(),
+   R::New2(all_lines) => all_lines
+    .iter()
+    .map(|x| {
+     let x = x.tabfix();
+
+     let res = apply_hoffset_and_trim_line3(
+      &(String::new() + &x.cursor + &x.line_number),
+      &x.text,
+      safe_area,
+      self.hoffset_main,
+     );
+
+     Line::from(vec![
+      Span::styled(x.cursor, cursor_style),
+      Span::styled(x.line_number, line_number_style),
+      Span::styled(res.1, text_style),
      ])
     })
     .collect::<Vec<_>>(),
@@ -721,7 +786,6 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
       }
      })
      .collect::<Vec<_>>(),
-
     R::New(all_lines2) => all_lines2
      .iter()
      .map(|(x1, x2)| {
@@ -738,6 +802,25 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
       Line::from(vec![
        Span::styled(l1, line_number_style),
        Span::styled(l2, text_style),
+      ])
+     })
+     .collect::<Vec<_>>(),
+    R::New2(all_lines2) => all_lines2
+     .iter()
+     .map(|x| {
+      let x = x.tabfix();
+
+      let res = apply_hoffset_and_trim_line3(
+       &(String::new() + &x.cursor + &x.line_number),
+       &x.text,
+       safe_area,
+       self.hoffset_main,
+      );
+
+      Line::from(vec![
+       Span::styled(x.cursor, cursor_style),
+       Span::styled(x.line_number, line_number_style),
+       Span::styled(res.1, text_style),
       ])
      })
      .collect::<Vec<_>>(),
@@ -1110,7 +1193,6 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     .get_second_main_area()
     .map(|x| x.inner(Margin::new(1, 1)));
 
-   let mut lines = vec![];
    // cawxd8rc8j 0%
    {
     let entries = &self.regex_filtered_cbs_entries;
@@ -1144,20 +1226,22 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     // iwcqjc9i11 Example for the line selection
     // cawxd8rc8j 40%
 
+    let mut lines = vec![];
+
     for (idx, entry) in entries
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
+     let is_cursor = match self.scroller_main.get_cursor() {
+      None => false,
+      Some(value) => idx == value,
+     };
+
+     let cursor_star = if is_cursor { ">" } else { " " };
+
      match entry {
       FilteredCbsEntries::ACE(acbe) => {
        let cbentry = &acbe.cbentry;
-       let is_cursor = match self.scroller_main.get_cursor() {
-        None => false,
-        Some(value) => idx == value,
-       };
-
-       let cursor_star = if is_cursor { ">" } else { " " };
-
        // let is_selected = entry.is_selected(cbs);
        let is_selected = cbs.is_fixated(cbentry);
 
@@ -1177,27 +1261,52 @@ impl TermionScreenPainter for TermionScreenFirstPage {
        }
 
        {
-        let s002 = format!(
-         "{} {} {:width$} {} {} : {}",
-         cursor_star,
-         selection_star,
-         idx + self.scroller_main.get_windowposition(), // mqbojcmkot
-         cbentry_borrowed.get_cbtype().get_info(),
-         cbentry_borrowed.get_date_time(),
-         // cbentry_borrowed.as_string(),
-         "",
-         width = numbers_width,
-        );
-        // lines.push(layout.fixline(&s002));
-        // lines.push(flatline(&s002));
-        lines.push((flatline(&s002), flatline(&cbentry_borrowed.as_string().into_owned())));
+        // let s002 = format!(
+        //  "{} {} {:width$} {} {} : {}",
+        //  cursor_star,
+        //  selection_star,
+        //  idx + self.scroller_main.get_windowposition(), // mqbojcmkot
+        //  cbentry_borrowed.get_cbtype().get_info(),
+        //  cbentry_borrowed.get_date_time(),
+        //  // cbentry_borrowed.as_string(),
+        //  "",
+        // width = numbers_width,
+        // );
+        // // lines.push(layout.fixline(&s002));
+        // // lines.push(flatline(&s002));
+        // lines.push((flatline(&s002), flatline(&cbentry_borrowed.as_string().into_owned())));
+
+        lines.push(LineStrings {
+         cursor: cursor_star.to_string(),
+         line_number: format!(
+          " {} {:width$} {} {} : ",
+          selection_star,
+          idx + self.scroller_main.get_windowposition(), // mqbojcmkot
+          cbentry_borrowed.get_cbtype().get_info(),
+          cbentry_borrowed.get_date_time(),
+          width = numbers_width,
+         ),
+         text: flatline(&cbentry_borrowed.as_string().into_owned()),
+        });
        }
       }
       FilteredCbsEntries::Line => {
-       lines.push((layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"), "".to_string()));
+       //  lines.push((layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"), "".to_string()));
+       lines.push(LineStrings {
+        cursor: cursor_star.to_string(),
+        line_number: "".to_string(),
+        text: layout
+         .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
+         .to_string(),
+       });
       }
       FilteredCbsEntries::Empty => {
-       lines.push(("".into(), "".into()));
+       //  lines.push(("".into(), "".into()));
+       lines.push(LineStrings {
+        cursor: cursor_star.to_string(),
+        line_number: "".to_string(),
+        text: "".to_string(),
+       });
       }
      }
     }
@@ -1213,13 +1322,18 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      };
      self.scroller_second.set_content_length(string_lines.len());
 
-     render_scroller_lines3(
+     render_scroller_lines4(
       &mut self.scroller_second,
       &string_lines,
       self.wrapped,
       layout,
       |cursor_star, idx, numbers_width, entry| {
-       (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
+       //  (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
+       LineStrings {
+        cursor: cursor_star.to_string(),
+        line_number: format!(" {:width$} : ", idx, width = numbers_width,),
+        text: entry.to_string(),
+       }
       },
      )
     };
@@ -1230,8 +1344,8 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      second_title: "selected content",
      rv,
      // tsfp: &self,
-     all_lines: R::New(&all_lines),
-     all_lines2: R::New(&all_lines2),
+     all_lines: R::New2(&all_lines),
+     all_lines2: R::New2(&all_lines2),
      wrapped1: false,
      wrapped2: self.wrapped,
      regex_edit_mode: self.regex_edit_mode.clone(),
@@ -1246,7 +1360,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      active_area: self.active_area,
      hoffset_main: self.scroller_main.get_hoffset(),
      hoffset_second: self.scroller_second.get_hoffset(),
-     theme_colors: self.config.color_theme.get_colors(),
+     theme_colors: self
+      .config
+      .color_theme
+      .get_colors_with_override(self.config.custom_theme_colors.as_ref()),
     };
 
     terminal
@@ -1586,14 +1703,19 @@ impl TermionScreenPainter for TermionScreenViewPage {
    scroller.set_windowlength(inner_main_rect.height as usize);
 
    // TODO : render_scroller_lines2
-   let all_lines = render_scroller_lines3(
+   let all_lines = render_scroller_lines4(
     scroller,
     &string_lines,
     self.wrapped,
     layout,
     |cursor_star, idx, numbers_width, entry| {
      // format!("{} {:width$} : {}", cursor_star, idx, entry, width = numbers_width,)
-     (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
+     //  (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
+     LineStrings {
+      cursor: cursor_star.to_string(),
+      line_number: format!(" {:width$} : ", idx, width = numbers_width,),
+      text: entry.to_string(),
+     }
     },
    );
    // for R::VS
@@ -1607,7 +1729,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     second_title: "unused",
     rv: &rv,
     // all_lines: R::Old(&all_lines),
-    all_lines: R::New(all_lines.as_ref()),
+    all_lines: R::New2(all_lines.as_ref()),
     all_lines2: R::Old(&[]),
     wrapped1: self.wrapped,
     wrapped2: false,
@@ -1622,7 +1744,10 @@ impl TermionScreenPainter for TermionScreenViewPage {
     active_area: ActiveArea::Main,
     hoffset_main: self.scroller.get_hoffset(),
     hoffset_second: 0,
-    theme_colors: self.config.color_theme.get_colors(),
+    theme_colors: self
+     .config
+     .color_theme
+     .get_colors_with_override(self.config.custom_theme_colors.as_ref()),
    };
 
    terminal

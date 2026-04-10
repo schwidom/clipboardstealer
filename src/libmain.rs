@@ -141,6 +141,10 @@ pub struct Args {
  pub(crate) color_theme: crate::color_theme::ColorTheme,
  #[arg(long, default_value_t = false, help = "list available color themes")]
  pub(crate) color_themes: bool,
+ #[arg(long, help = "load color theme from JSON file")]
+ pub(crate) load_color_theme: Option<String>,
+ #[arg(long, help = "save current color theme to JSON file")]
+ pub(crate) save_color_theme: Option<String>,
 }
 
 #[derive(Debug)]
@@ -976,6 +980,39 @@ pub fn main() {
   return;
  }
 
+ // Handle --load-color-theme - load theme from JSON and use it
+ let custom_theme_colors = if let Some(path) = &args.load_color_theme {
+  match std::fs::read_to_string(path) {
+   Ok(content) => match crate::color_theme::ColorTheme::from_json(&content) {
+    Ok(theme_colors) => {
+     println!("Loaded theme from {}", path);
+     Some(theme_colors)
+    }
+    Err(e) => {
+     eprintln!("Error parsing theme file: {}", e);
+     std::process::exit(1);
+    }
+   },
+   Err(e) => {
+    eprintln!("Error reading theme file: {}", e);
+    std::process::exit(1);
+   }
+  }
+ } else {
+  None
+ };
+
+ // Handle --save-color-theme early exit (just save and exit)
+ if let Some(path) = &args.save_color_theme {
+  let json = args.color_theme.to_json();
+  if let Err(e) = std::fs::write(path, &json) {
+   eprintln!("Error saving theme file: {}", e);
+   std::process::exit(1);
+  }
+  println!("Saved theme to {}", path);
+  return;
+ }
+
  {
   // warnings
 
@@ -1045,7 +1082,7 @@ pub fn main() {
   return;
  }
 
- let config = Box::leak(Box::new(Config::from_args(&args)));
+ let config = Box::leak(Box::new(Config::from_args(&args, custom_theme_colors)));
 
  // let appstate = AppState::new();
  // let appstate = Box::leak(Box::new(AppState::new(config)));

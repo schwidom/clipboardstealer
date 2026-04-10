@@ -130,6 +130,7 @@ pub struct Config {
  pub load_ndjson_string: Vec<String>,
  pub editor: bool,
  pub color_theme: crate::color_theme::ColorTheme,
+ pub custom_theme_colors: Option<crate::color_theme::ThemeColors>,
  pub suspend_threads: RwLock<()>,
  pub suspended_threads: AtomicBool,
 }
@@ -141,7 +142,10 @@ use std::fs::OpenOptions;
 use tracing::Level;
 
 impl Config {
- pub fn from_args(args: &Args) -> Self {
+ pub fn from_args(
+  args: &Args,
+  custom_theme_colors: Option<crate::color_theme::ThemeColors>,
+ ) -> Self {
   if args.debug {
    if let Some(df) = args.debugfile.clone() {
     let file = OpenOptions::new()
@@ -185,6 +189,7 @@ impl Config {
    load_ndjson_string,
    editor: args.editor,
    color_theme: args.color_theme,
+   custom_theme_colors,
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
   }
@@ -200,5 +205,44 @@ impl Config {
  }
  pub(crate) fn is_blocked_for_external_program(&self) -> bool {
   self.suspended_threads.load(Ordering::Relaxed)
+ }
+
+ pub fn save_theme_to_file(&self, path: &str) -> Result<(), String> {
+  let json = self.color_theme.to_json();
+  std::fs::write(path, json).map_err(|e| format!("Failed to write theme file: {}", e))
+ }
+
+ pub fn load_theme_from_file(&self, path: &str) -> Result<crate::color_theme::ColorTheme, String> {
+  let content =
+   std::fs::read_to_string(path).map_err(|e| format!("Failed to read theme file: {}", e))?;
+  let theme_colors = crate::color_theme::ColorTheme::from_json(&content)?;
+  for (_name, theme) in crate::color_theme::ColorTheme::all_themes() {
+   let builtin = theme.get_colors();
+   if Self::colors_equal(&builtin, &theme_colors) {
+    return Ok(theme.clone());
+   }
+  }
+  Err("No matching built-in theme found".to_string())
+ }
+
+ fn colors_equal(a: &crate::color_theme::ThemeColors, b: &crate::color_theme::ThemeColors) -> bool {
+  Self::color_eq(&a.window_bg, &b.window_bg)
+   && Self::color_eq(&a.window_fg, &b.window_fg)
+   && Self::color_eq(&a.cursor, &b.cursor)
+   && Self::color_eq(&a.line_number, &b.line_number)
+   && Self::color_eq(&a.text, &b.text)
+   && Self::color_eq(&a.border, &b.border)
+   && Self::color_eq(&a.border_inactive, &b.border_inactive)
+   && Self::color_eq(&a.menu, &b.menu)
+ }
+
+ fn color_eq(a: &Option<ratatui::style::Color>, b: &Option<ratatui::style::Color>) -> bool {
+  match (a, b) {
+   (Some(ratatui::style::Color::Rgb(r1, g1, b1)), Some(ratatui::style::Color::Rgb(r2, g2, b2))) => {
+    r1 == r2 && g1 == g2 && b1 == b2
+   }
+   (None, None) => true,
+   _ => false,
+  }
  }
 }
