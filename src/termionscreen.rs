@@ -615,6 +615,7 @@ impl<'a> LineStringsConfig<'a> {
     .line_count
     .map_or("".to_string(), |x| format!(" l({})", x))
    + if self.wrapped { " (w)" } else { "" }
+   + &(if self.hoffset == 0 { "".to_string() } else { format!(" o({})", self.hoffset) })
    + &rest.join(" ")
    + " "
  }
