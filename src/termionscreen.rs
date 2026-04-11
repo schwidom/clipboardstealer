@@ -556,6 +556,7 @@ struct LineStrings {
  text: String,
 }
 
+/// manages the visible parts of a line in the pagers
 impl LineStrings {
  fn tabfix(&self) -> Self {
   LineStrings {
@@ -566,6 +567,7 @@ impl LineStrings {
  }
 }
 
+/// manages the visible parts of the text in the pagers
 #[derive(Debug, Default, PartialEq)]
 struct LineStringsConfig<'a> {
  line_strings: &'a [LineStrings],
@@ -573,10 +575,11 @@ struct LineStringsConfig<'a> {
  title: &'a str,
  line_count: Option<usize>,
  hoffset: usize,
+ theme_colors: ThemeColors,
 }
 
 impl<'a> LineStringsConfig<'a> {
- fn prepare2print(&self, safe_area: Rect, theme_colors: &ThemeColors) -> Vec<Line<'_>> {
+ fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>> {
   self
    .line_strings
    .iter()
@@ -591,12 +594,15 @@ impl<'a> LineStringsConfig<'a> {
     );
 
     let cursor_style =
-     if let Some(color) = theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
+     if let Some(color) = self.theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
 
-    let line_number_style =
-     if let Some(color) = theme_colors.line_number { Style::new().fg(color) } else { Style::new() };
+    let line_number_style = if let Some(color) = self.theme_colors.line_number {
+     Style::new().fg(color)
+    } else {
+     Style::new()
+    };
     let text_style =
-     if let Some(color) = theme_colors.text { Style::new().fg(color) } else { Style::new() };
+     if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
 
     Line::from(vec![
      Span::styled(x.cursor, cursor_style),
@@ -607,7 +613,7 @@ impl<'a> LineStringsConfig<'a> {
    .collect::<Vec<_>>()
  }
 
- fn title(&self, is_active: bool, rest: &[&str]) -> String {
+ fn get_title(&self, is_active: bool, rest: &[&str]) -> String {
   String::from(" ")
    + if is_active { "* " } else { "  " }
    + self.title
@@ -618,6 +624,26 @@ impl<'a> LineStringsConfig<'a> {
    + &(if self.hoffset == 0 { "".to_string() } else { format!(" o({})", self.hoffset) })
    + &rest.join(" ")
    + " "
+ }
+
+ fn get_block(&self, is_active: bool) -> Block<'_> {
+  let border_color =
+   if is_active { self.theme_colors.border } else { self.theme_colors.border_inactive };
+  let border_style =
+   if let Some(color) = border_color { Style::new().fg(color) } else { Style::new() };
+
+  let bg_style = if let Some(color) = self.theme_colors.window_bg {
+   Style::new().bg(color)
+  } else {
+   Style::new()
+  };
+
+  let block = Block::bordered()
+   .title_alignment(Alignment::Left)
+   .border_type(BorderType::Rounded)
+   .border_style(border_style)
+   .style(bg_style);
+  block
  }
 }
 
@@ -651,43 +677,23 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
   let title = self
    .all_lines
-   .title(is_main_active, &[regex_count_indicator]);
+   .get_title(is_main_active, &[regex_count_indicator]);
 
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
-  let main_border_style = if is_main_active {
-   if let Some(color) = self.theme_colors.border {
-    Style::new().fg(color)
-   } else {
-    Style::new()
-   }
-  } else if let Some(color) = self.theme_colors.border_inactive {
-   Style::new().fg(color)
-  } else {
-   Style::new()
-  };
-
-  let main_bg_style = if let Some(color) = self.theme_colors.window_bg {
-   Style::new().bg(color)
-  } else {
-   Style::new()
-  };
-
-  let block = Block::bordered()
+  let block = self
+   .all_lines
+   .get_block(is_main_active)
    .title(title)
-   .title_alignment(Alignment::Left)
    .title(Line::from(top_right_line_text).right_aligned())
-   .title_bottom(Line::from(bottom_center_line_text).centered())
-   .border_type(BorderType::Rounded)
-   .border_style(main_border_style)
-   .style(main_bg_style);
+   .title_bottom(Line::from(bottom_center_line_text).centered());
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(area); // avoids crash
 
-  let all_lines = self.all_lines.prepare2print(safe_area, &self.theme_colors);
+  let all_lines = self.all_lines.prepare2print(safe_area);
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
 
@@ -705,40 +711,15 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let is_second_active = self.active_area == ActiveArea::Second;
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
-   let title2 = self.all_lines2.title(is_second_active, &[]);
+   let title2 = self.all_lines2.get_title(is_second_active, &[]);
 
-   // &format!(" l({})", self.line_count2);
-
-   let second_border_style = if is_second_active {
-    if let Some(color) = self.theme_colors.border {
-     Style::new().fg(color)
-    } else {
-     Style::new()
-    }
-   } else if let Some(color) = self.theme_colors.border_inactive {
-    Style::new().fg(color)
-   } else {
-    Style::new()
-   };
-
-   let second_bg_style = if let Some(color) = self.theme_colors.window_bg {
-    Style::new().bg(color)
-   } else {
-    Style::new()
-   };
-
-   let block2 = Block::bordered()
-    .title(title2)
-    .title_alignment(Alignment::Left)
-    .border_type(BorderType::Rounded)
-    .border_style(second_border_style)
-    .style(second_bg_style);
+   let block2 = self.all_lines2.get_block(is_second_active).title(title2);
 
    // let rect2 = sma.inner(Margin::new(0, 1));
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(area); // avoids crash
 
-   let all_lines2 = self.all_lines2.prepare2print(safe_area, &self.theme_colors);
+   let all_lines2 = self.all_lines2.prepare2print(safe_area);
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
 
@@ -1253,6 +1234,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      )
     };
     // cawxd8rc8j 50%
+
+    let theme_colors = self
+     .config
+     .color_theme
+     .get_colors_with_override(self.config.custom_theme_colors.as_ref());
     let sw = TwoScreenDefaultWidget {
      helpline: HELP_FIRST_PAGE,
      rv,
@@ -1263,6 +1249,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       title: "entry list",
       line_count: Some(entries.len()),
       hoffset: self.scroller_main.get_hoffset(),
+      theme_colors: theme_colors.clone(),
      },
      all_lines2: LineStringsConfig {
       line_strings: &all_lines2,
@@ -1270,6 +1257,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       title: "selected content",
       line_count: line_count2,
       hoffset: self.scroller_second.get_hoffset(),
+      theme_colors: theme_colors.clone(),
      },
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
@@ -1278,10 +1266,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      statusline_heap: assd.statusline_heap.clone(),
      paused: self.paused,
      active_area: self.active_area,
-     theme_colors: self
-      .config
-      .color_theme
-      .get_colors_with_override(self.config.custom_theme_colors.as_ref()),
+     theme_colors: theme_colors.clone(),
     };
 
     terminal
@@ -1641,6 +1626,10 @@ impl TermionScreenPainter for TermionScreenViewPage {
    // for R::Old
    // let all_lines = all_lines.join( "\n");
 
+   let theme_colors = self
+    .config
+    .color_theme
+    .get_colors_with_override(self.config.custom_theme_colors.as_ref());
    let sw = TwoScreenDefaultWidget {
     helpline: HELP_QX,
     rv: &rv,
@@ -1652,6 +1641,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
      title: &self.main_title,
      line_count: Some(string_lines.len()),
      hoffset: self.scroller.get_hoffset(),
+     theme_colors: theme_colors.clone(),
     },
     all_lines2: LineStringsConfig::default(),
     regex_edit_mode: None,
@@ -1661,10 +1651,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
     statusline_heap: assd.statusline_heap.clone(),
     paused: false,
     active_area: ActiveArea::Main,
-    theme_colors: self
-     .config
-     .color_theme
-     .get_colors_with_override(self.config.custom_theme_colors.as_ref()),
+    theme_colors: theme_colors.clone(),
    };
 
    terminal
