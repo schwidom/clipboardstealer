@@ -219,7 +219,7 @@ impl Config {
   for (_name, theme) in crate::color_theme::ColorTheme::all_themes() {
    let builtin = theme.get_colors();
    if Self::colors_equal(&builtin, &theme_colors) {
-    return Ok(theme.clone());
+    return Ok(*theme);
    }
   }
   Err("No matching built-in theme found".to_string())

@@ -88,6 +88,7 @@ fn color_to_hex(c: &Option<Color>) -> Option<String> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct ThemeColors {
  pub window_bg: Option<Color>,
  pub window_fg: Option<Color>,
@@ -99,20 +100,6 @@ pub struct ThemeColors {
  pub menu: Option<Color>,
 }
 
-impl Default for ThemeColors {
- fn default() -> Self {
-  Self {
-   window_bg: None,
-   window_fg: None,
-   cursor: None,
-   line_number: None,
-   text: None,
-   border: None,
-   border_inactive: None,
-   menu: None,
-  }
- }
-}
 
 impl ColorTheme {
  pub fn get_colors(&self) -> ThemeColors {

@@ -530,6 +530,12 @@ pub struct StatusLineHeap {
  seq_gen: Arc<StatusSeqGenerator>,
 }
 
+impl Default for StatusLineHeap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatusLineHeap {
  pub fn new() -> Self {
   Self {

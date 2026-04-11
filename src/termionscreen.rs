@@ -549,6 +549,7 @@ impl RatatuiVariables {
  }
 }
 
+#[derive(Debug, PartialEq)]
 struct LineStrings {
  cursor: String,
  line_number: String,
@@ -565,11 +566,58 @@ impl LineStrings {
  }
 }
 
-// refactoring
-enum R<'a> {
- Old(&'a [String]),
- New(&'a [(String, String)]),
- New2(&'a [LineStrings]),
+#[derive(Debug, Default, PartialEq)]
+struct LineStringsConfig<'a> {
+ line_strings: &'a [LineStrings],
+ wrapped: bool,
+ title: &'a str,
+ line_count: Option<usize>,
+ hoffset: usize,
+}
+
+impl<'a> LineStringsConfig<'a> {
+ fn prepare2print(&self, safe_area: Rect, theme_colors: &ThemeColors) -> Vec<Line<'_>> {
+  self
+   .line_strings
+   .iter()
+   .map(|x| {
+    let x = x.tabfix();
+
+    let res = apply_hoffset_and_trim_line3(
+     &(String::new() + &x.cursor + &x.line_number),
+     &x.text,
+     safe_area,
+     self.hoffset,
+    );
+
+    let cursor_style =
+     if let Some(color) = theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
+
+    let line_number_style =
+     if let Some(color) = theme_colors.line_number { Style::new().fg(color) } else { Style::new() };
+    let text_style =
+     if let Some(color) = theme_colors.text { Style::new().fg(color) } else { Style::new() };
+
+    Line::from(vec![
+     Span::styled(x.cursor, cursor_style),
+     Span::styled(x.line_number, line_number_style),
+     Span::styled(res.1, text_style),
+    ])
+   })
+   .collect::<Vec<_>>()
+ }
+
+ fn title(&self, is_active: bool, rest: &[&str]) -> String {
+  String::from(" ")
+   + if is_active { "* " } else { "  " }
+   + self.title
+   + &self
+    .line_count
+    .map_or("".to_string(), |x| format!(" l({})", x))
+   + if self.wrapped { " (w)" } else { "" }
+   + &rest.join(" ")
+   + " "
+ }
 }
 
 /// the TwoScreenDefaultWidget paints in the areas of the
@@ -577,24 +625,16 @@ enum R<'a> {
 
 struct TwoScreenDefaultWidget<'a> {
  helpline: &'a str,
- main_title: &'a str,
- second_title: &'a str,
  rv: &'a RatatuiVariables,
- all_lines: R<'a>,
- all_lines2: R<'a>,
- wrapped1: bool,
- wrapped2: bool,
+ all_lines: LineStringsConfig<'a>,
+ all_lines2: LineStringsConfig<'a>,
  regex_edit_mode: Option<String>,
  regex_edit_mode_state: String,
  regex_count: usize,
- line_count: usize,
- line_count2: Option<usize>,
  delete_confirm_mode: Option<AcbeId>,
  statusline_heap: StatusLineHeap,
  paused: bool,
  active_area: ActiveArea,
- hoffset_main: usize,
- hoffset_second: usize,
  theme_colors: ThemeColors,
 }
 
@@ -608,13 +648,9 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   let regex_count_indicator =
    if 0 != self.regex_count { &format!(" r({})", self.regex_count) } else { "" };
-  let title = " ".to_string()
-   + if is_main_active { "* " } else { "  " }
-   + self.main_title
-   + &format!(" l({})", self.line_count)
-   + if self.wrapped1 { " (w)" } else { "" }
-   + regex_count_indicator
-   + " ";
+  let title = self
+   .all_lines
+   .title(is_main_active, &[regex_count_indicator]);
 
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
@@ -625,12 +661,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    } else {
     Style::new()
    }
+  } else if let Some(color) = self.theme_colors.border_inactive {
+   Style::new().fg(color)
   } else {
-   if let Some(color) = self.theme_colors.border_inactive {
-    Style::new().fg(color)
-   } else {
-    Style::new()
-   }
+   Style::new()
   };
 
   let main_bg_style = if let Some(color) = self.theme_colors.window_bg {
@@ -652,76 +686,15 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let rect1 = *self.rv.pl.get_main_area();
   let safe_area = rect1.intersection(area); // avoids crash
 
-  let cursor_style =
-   if let Some(color) = self.theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
-
-  let line_number_style = if let Some(color) = self.theme_colors.line_number {
-   Style::new().fg(color)
-  } else {
-   Style::new()
-  };
-  let text_style =
-   if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
-
-  let all_lines = match self.all_lines {
-   R::Old(all_lines) => all_lines
-    .iter()
-    .map(|x| {
-     let x = tabfix(x);
-     if self.wrapped1 {
-      Line::from(Span::raw(x))
-     } else {
-      let trimmed = apply_hoffset_and_trim_line(&x, safe_area, self.hoffset_main).to_string();
-      Line::from(Span::raw(trimmed))
-     }
-    })
-    .collect::<Vec<_>>(),
-   R::New(all_lines) => all_lines
-    .iter()
-    .map(|(x1, x2)| {
-     let x1 = tabfix(x1);
-     let x2 = tabfix(x2);
-
-     let (l1, l2) = if self.wrapped1 {
-      (x1, x2)
-     } else {
-      let res = apply_hoffset_and_trim_line3(&x1, &x2, safe_area, self.hoffset_main);
-      (res.0.to_string(), res.1.to_string())
-     };
-
-     Line::from(vec![
-      Span::styled(l1, line_number_style),
-      Span::styled(l2, text_style),
-     ])
-    })
-    .collect::<Vec<_>>(),
-   R::New2(all_lines) => all_lines
-    .iter()
-    .map(|x| {
-     let x = x.tabfix();
-
-     let res = apply_hoffset_and_trim_line3(
-      &(String::new() + &x.cursor + &x.line_number),
-      &x.text,
-      safe_area,
-      self.hoffset_main,
-     );
-
-     Line::from(vec![
-      Span::styled(x.cursor, cursor_style),
-      Span::styled(x.line_number, line_number_style),
-      Span::styled(res.1, text_style),
-     ])
-    })
-    .collect::<Vec<_>>(),
-  };
+  let all_lines = self.all_lines.prepare2print(safe_area, &self.theme_colors);
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
 
   let paragraph = Paragraph::new(all_lines).block(block).left_aligned();
 
   // weue806j1y
-  let paragraph = if !self.wrapped1 { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
+  let paragraph =
+   if !self.all_lines.wrapped { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
 
   let menu_style =
    if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
@@ -731,14 +704,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let is_second_active = self.active_area == ActiveArea::Second;
 
   if let Some(sma) = self.rv.pl.get_second_main_area() {
-   let title2 = " ".to_string()
-    + if is_second_active { "* " } else { "  " }
-    + self.second_title
-    + &self
-     .line_count2
-     .map_or("".to_string(), |x| format!(" l({})", x))
-    + if self.wrapped2 { " (w)" } else { "" }
-    + " ";
+   let title2 = self.all_lines2.title(is_second_active, &[]);
 
    // &format!(" l({})", self.line_count2);
 
@@ -748,12 +714,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
     } else {
      Style::new()
     }
+   } else if let Some(color) = self.theme_colors.border_inactive {
+    Style::new().fg(color)
    } else {
-    if let Some(color) = self.theme_colors.border_inactive {
-     Style::new().fg(color)
-    } else {
-     Style::new()
-    }
+    Style::new()
    };
 
    let second_bg_style = if let Some(color) = self.theme_colors.window_bg {
@@ -773,63 +737,13 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let rect2 = *sma;
    let safe_area2 = rect2.intersection(area); // avoids crash
 
-   let all_lines2 = match self.all_lines2 {
-    R::Old(all_lines2) => all_lines2
-     .iter()
-     .map(|x| {
-      let x = tabfix(x);
-      if self.wrapped2 {
-       Line::from(Span::raw(x))
-      } else {
-       let trimmed = apply_hoffset_and_trim_line(&x, safe_area2, self.hoffset_second).to_string();
-       Line::from(Span::raw(trimmed))
-      }
-     })
-     .collect::<Vec<_>>(),
-    R::New(all_lines2) => all_lines2
-     .iter()
-     .map(|(x1, x2)| {
-      let x1 = tabfix(x1);
-      let x2 = tabfix(x2);
-
-      let (l1, l2) = if self.wrapped2 {
-       (x1, x2)
-      } else {
-       let res = apply_hoffset_and_trim_line3(&x1, &x2, safe_area2, self.hoffset_second);
-       (res.0.to_string(), res.1.to_string())
-      };
-
-      Line::from(vec![
-       Span::styled(l1, line_number_style),
-       Span::styled(l2, text_style),
-      ])
-     })
-     .collect::<Vec<_>>(),
-    R::New2(all_lines2) => all_lines2
-     .iter()
-     .map(|x| {
-      let x = x.tabfix();
-
-      let res = apply_hoffset_and_trim_line3(
-       &(String::new() + &x.cursor + &x.line_number),
-       &x.text,
-       safe_area,
-       self.hoffset_second,
-      );
-
-      Line::from(vec![
-       Span::styled(x.cursor, cursor_style),
-       Span::styled(x.line_number, line_number_style),
-       Span::styled(res.1, text_style),
-      ])
-     })
-     .collect::<Vec<_>>(),
-   };
+   let all_lines2 = self.all_lines2.prepare2print(safe_area, &self.theme_colors);
 
    let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
 
    // weue806j1y
-   let paragraph2 = if !self.wrapped2 { paragraph2 } else { paragraph2.wrap(Wrap { trim: false }) };
+   let paragraph2 =
+    if !self.all_lines2.wrapped { paragraph2 } else { paragraph2.wrap(Wrap { trim: false }) };
 
    // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
@@ -1286,7 +1200,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
           cbentry_borrowed.get_date_time(),
           width = numbers_width,
          ),
-         text: flatline(&cbentry_borrowed.as_string().into_owned()),
+         text: flatline(&cbentry_borrowed.as_string()),
         });
        }
       }
@@ -1340,26 +1254,29 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     // cawxd8rc8j 50%
     let sw = TwoScreenDefaultWidget {
      helpline: HELP_FIRST_PAGE,
-     main_title: "entry list",
-     second_title: "selected content",
      rv,
      // tsfp: &self,
-     all_lines: R::New2(&all_lines),
-     all_lines2: R::New2(&all_lines2),
-     wrapped1: false,
-     wrapped2: self.wrapped,
+     all_lines: LineStringsConfig {
+      line_strings: &all_lines,
+      wrapped: false,
+      title: "entry list",
+      line_count: Some(entries.len()),
+      hoffset: self.scroller_main.get_hoffset(),
+     },
+     all_lines2: LineStringsConfig {
+      line_strings: &all_lines2,
+      wrapped: self.wrapped,
+      title: "selected content",
+      line_count: line_count2,
+      hoffset: self.scroller_second.get_hoffset(),
+     },
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
      regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
-     line_count: entries.len(),
-     // line_count2: selected_string.lines().count(),
-     line_count2,
      delete_confirm_mode: self.delete_confirm_mode,
      statusline_heap: assd.statusline_heap.clone(),
      paused: self.paused,
      active_area: self.active_area,
-     hoffset_main: self.scroller_main.get_hoffset(),
-     hoffset_second: self.scroller_second.get_hoffset(),
      theme_colors: self
       .config
       .color_theme
@@ -1725,25 +1642,24 @@ impl TermionScreenPainter for TermionScreenViewPage {
 
    let sw = TwoScreenDefaultWidget {
     helpline: HELP_QX,
-    main_title: &self.main_title,
-    second_title: "unused",
     rv: &rv,
     // all_lines: R::Old(&all_lines),
-    all_lines: R::New2(all_lines.as_ref()),
-    all_lines2: R::Old(&[]),
-    wrapped1: self.wrapped,
-    wrapped2: false,
+    // all_lines: LineStringsConfig::New2(all_lines.as_ref())
+    all_lines: LineStringsConfig {
+     line_strings: all_lines.as_ref(),
+     wrapped: self.wrapped,
+     title: &self.main_title,
+     line_count: Some(string_lines.len()),
+     hoffset: self.scroller.get_hoffset(),
+    },
+    all_lines2: LineStringsConfig::default(),
     regex_edit_mode: None,
     regex_edit_mode_state: "".to_string(),
     regex_count: 0,
-    line_count: string_lines.len(),
-    line_count2: None,
     delete_confirm_mode: None,
     statusline_heap: assd.statusline_heap.clone(),
     paused: false,
     active_area: ActiveArea::Main,
-    hoffset_main: self.scroller.get_hoffset(),
-    hoffset_second: 0,
     theme_colors: self
      .config
      .color_theme
