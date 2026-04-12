@@ -1,7 +1,7 @@
 // #![allow(dead_code)]
 // #![allow(unused)]
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
@@ -69,104 +69,6 @@ fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
   .last()
   .unwrap_or(0);
  &text[0..last_idx]
-}
-
-// see also apply_hoffset_and_trim
-fn render_scroller_lines<T>(
- scroller: &mut Scroller,
- items: &[T],
- wrapped: bool,
- layout: &Layout,
- formatter: impl Fn(&str, usize, usize, &T) -> String,
-) -> String {
- let lines = render_scroller_lines2(scroller, items, wrapped, layout, formatter);
-
- lines.join("\n")
-}
-
-fn render_scroller_lines2<T>(
- scroller: &mut Scroller,
- items: &[T],
- wrapped: bool,
- _layout: &Layout,
- formatter: impl Fn(&str, usize, usize, &T) -> String,
-) -> Vec<String> {
- let numbers_width = (items.len() as f64).log10().ceil() as usize;
- let mut lines = vec![];
-
- for (idx, item) in items[scroller.get_safe_windowrange()].iter().enumerate() {
-  let is_cursor = match scroller.get_cursor() {
-   None => false,
-   Some(value) => idx == value,
-  };
-  let cursor_star = if is_cursor { ">" } else { " " };
-
-  let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
-  // lines.push(if wrapped { line } else { layout.fixline(&line) });
-  // TODO : hier bereits nicht printbare Zeichen durch punkte ersetzen und tabfix anwenden
-  lines.push(if wrapped {
-   line
-  } else {
-   // layout.fixline(&line)
-   // truncate_before_or_at_display_width(&line, layout.width.unwrap_or(80) as usize).to_string()
-   // einfach abschneiden ohne berücksichtigung der scroller.get
-   // line alleine funktioniert // hack!
-   line
-
-   // ist besser, funktioniert aber auch nicht
-   // apply_hoffset_and_trim_line(
-   //  &line,
-   //  Rect::new(0, 0, layout.width.unwrap_or(80), layout.height.unwrap_or(40)),
-   //  scroller.get_hoffset(),
-   // ).to_string()
-  });
-
-  // lines.push(if true { line } else { layout.fixline(&line) });
- }
- lines
-}
-
-fn render_scroller_lines3<T>(
- scroller: &mut Scroller,
- items: &[T],
- wrapped: bool,
- _layout: &Layout,
- formatter: impl Fn(&str, usize, usize, &T) -> (String, String),
-) -> Vec<(String, String)> {
- let numbers_width = (items.len() as f64).log10().ceil() as usize;
- let mut lines = vec![];
-
- for (idx, item) in items[scroller.get_safe_windowrange()].iter().enumerate() {
-  let is_cursor = match scroller.get_cursor() {
-   None => false,
-   Some(value) => idx == value,
-  };
-  let cursor_star = if is_cursor { ">" } else { " " };
-
-  // let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
-  let line = formatter(cursor_star, idx + scroller.get_windowposition(), numbers_width, item);
-  // lines.push(if wrapped { line } else { layout.fixline(&line) });
-  // TODO : hier bereits nicht printbare Zeichen durch punkte ersetzen und tabfix anwenden
-  lines.push(if wrapped {
-   line
-  } else {
-   // layout.fixline(&line)
-   // truncate_before_or_at_display_width(&line, layout.width.unwrap_or(80) as usize).to_string()
-   // einfach abschneiden ohne berücksichtigung der scroller.get
-   // line alleine funktioniert // hack!
-   line
-
-   // ist besser, funktioniert aber auch nicht
-   // apply_hoffset_and_trim_line(
-   //  &line,
-   //  Rect::new(0, 0, layout.width.unwrap_or(80), layout.height.unwrap_or(40)),
-   //  scroller.get_hoffset(),
-   // ).to_string()
-  });
-
-  // lines.push(if true { line } else { layout.fixline(&line) });
- }
- lines
 }
 
 fn render_scroller_lines4<T>(
@@ -884,7 +786,7 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
 pub struct TermionScreenFirstPage {
  config: &'static Config,
  scroller_main: Scroller,
- scroller_second: Scroller,
+ // scroller_second: Scroller,
  layout: Layout,
  flipstate: u8,
  wrapped: bool,
@@ -915,7 +817,7 @@ impl TermionScreenFirstPage {
   Self {
    config,
    scroller_main: Scroller::new(),
-   scroller_second: Scroller::new(),
+   // scroller_second: Scroller::new(),
    layout: Layout::new(),
    flipstate: 1,
    wrapped: false,
@@ -947,7 +849,7 @@ impl TermionScreenFirstPage {
    return;
   }
   trace!("update_filtered_entries");
-  let entries = cbs.get_entries();
+  let entries = cbs.get_cbentries();
 
   // gtewxxi8oh
   self.regex_filtered_cbs_entries = entries
@@ -1001,7 +903,7 @@ impl TermionScreenFirstPage {
     .for_each(|x| self.regex_filtered_cbs_entries.push_front(x));
   }
 
-  self.last_entry_count = cbs.get_entries().len();
+  self.last_entry_count = cbs.get_cbentries().len();
   self.needs_refilter = false;
  }
 
@@ -1022,8 +924,9 @@ impl TermionScreenFirstPage {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
-     if let Some(cursor_second) = self.scroller_second.get_cursor_in_array() {
-      let cbentry_borrowed = acbe.cbentry.borrow();
+     let cbentry_borrowed = acbe.cbentry.borrow();
+     let scroller_second = cbentry_borrowed.get_scroller();
+     if let Some(cursor_second) = scroller_second.get_cursor_in_array() {
       let lines = cbentry_borrowed.get_text();
       // return lines.iter().map(|l| tabfix(l).width()).max().unwrap_or(0);
       if cursor_second < lines.len() {
@@ -1043,10 +946,26 @@ impl TermionScreenFirstPage {
   };
  }
 
- fn get_active_scroller(&mut self) -> &mut Scroller {
+ fn get_current_entry(&self) -> Option<RefMut<'_, CBEntry>> {
+  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+   let entries = &self.regex_filtered_cbs_entries;
+   if cursor < entries.len() {
+    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+     let cbentry_borrowed = acbe.cbentry.borrow_mut();
+     return Some(cbentry_borrowed);
+    }
+   }
+  }
+  None
+ }
+
+ fn get_active_scroller<'a>(
+  &'a mut self,
+  cbe: Option<&'a mut CBEntry>,
+ ) -> Option<&'a mut Scroller> {
   match self.active_area {
-   ActiveArea::Main => &mut self.scroller_main,
-   ActiveArea::Second => &mut self.scroller_second,
+   ActiveArea::Main => Some(&mut self.scroller_main),
+   ActiveArea::Second => cbe.map(|x| x.get_scroller_mut()),
   }
  }
 }
@@ -1057,7 +976,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
  fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
   let cbs = &mut assd.cbs;
 
-  if cbs.get_entries().len() != self.last_entry_count {
+  if cbs.get_cbentries().len() != self.last_entry_count {
    self.needs_refilter = true;
   }
   trace!("needs_refilter {}", self.needs_refilter);
@@ -1102,7 +1021,10 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      trace!("scroller.set_content_length(entries.len()) : {}", entries.len());
     }
     self.scroller_main.set_hwindowlength(self.main_width);
-    self.scroller_second.set_hwindowlength(self.second_width);
+
+    // etzwepgkfl
+    // self.scroller_second.set_hwindowlength(self.second_width);
+
     self.scroller_main.set_content_length(entries.len());
 
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
@@ -1111,7 +1033,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .set_windowlength(inner_main_rect.height as usize);
 
     let second_area_height = inner_second_rect.map_or(0, |x| x.height as usize);
-    self.scroller_second.set_windowlength(second_area_height);
+
+    // etzwepgkfl
+    // self.scroller_second.set_windowlength(second_area_height);
 
     let numbers_width = (entries.len() as f64).log10().ceil() as usize;
 
@@ -1128,6 +1052,22 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
+     match entry {
+      FilteredCbsEntries::ACE(appended_cbentry) => {
+       let mut bm = appended_cbentry.cbentry.borrow_mut();
+       // etzwepgkfl
+       bm.get_scroller_mut().set_hwindowlength(self.second_width);
+       // etzwepgkfl
+       bm.get_scroller_mut().set_windowlength(second_area_height);
+      }
+      _ => {}
+     }
+
+     // if &FilteredCbsEntries::ACE( entry) = entry {
+     //  let bm = entry.borrow_mut();
+     //  bm.
+     // }
+
      let is_cursor = match self.scroller_main.get_cursor() {
       None => false,
       Some(value) => idx == value,
@@ -1143,11 +1083,14 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
        let selection_star = if is_selected { "*" } else { " " };
 
-       let cbentry_borrowed = cbentry.borrow_mut();
+       let mut cbentry_borrowed = cbentry.borrow_mut();
 
        if is_cursor {
         if self.prev_selected_text.as_ref() != Some(cbentry_borrowed.get_data()) {
-         self.scroller_second.reset_hoffset();
+         // etzwepgkfl
+
+         // self.scroller_second.reset_hoffset();
+         // cbentry_borrowed.get_scroller_mut().reset_hoffset();
          self.prev_selected_text = Some(cbentry_borrowed.get_data().clone());
         }
         // selected_string = cbentry.data.clone();
@@ -1210,16 +1153,31 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     // let all_lines = lines.join("\n");
     let all_lines = lines;
 
+    // etzwepgkfl
+    let mut hoffset_second: usize = 0;
     // cawxd8rc8j 40%
     let all_lines2 = {
-     let string_lines = match selected_cbentry {
+     let string_lines = match &selected_cbentry {
       Some(rc) => rc.borrow().get_text().clone(),
       None => vec![],
      };
-     self.scroller_second.set_content_length(string_lines.len());
+     // etzwepgkfl
+     // self.scroller_second.set_content_length(string_lines.len());
+
+     let mut bm;
+     let scroller_second = if let Some(selected_cbentry) = selected_cbentry.as_ref() {
+      bm = selected_cbentry.borrow_mut();
+      let sm = bm.get_scroller_mut();
+      sm.set_content_length(string_lines.len());
+      hoffset_second = sm.get_hoffset();
+      sm
+     } else {
+      &mut Scroller::default()
+     };
 
      render_scroller_lines4(
-      &mut self.scroller_second,
+      // &mut self.scroller_second,
+      scroller_second,
       &string_lines,
       self.wrapped,
       layout,
@@ -1256,7 +1214,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       wrapped: self.wrapped,
       title: "selected content",
       line_count: line_count2,
-      hoffset: self.scroller_second.get_hoffset(),
+      // etzwepgkfl
+      // hoffset: self.scroller_second.get_hoffset(),
+      hoffset: hoffset_second,
       theme_colors: theme_colors.clone(),
      },
      regex_edit_mode: self.regex_edit_mode.clone(),
@@ -1414,7 +1374,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
       } else if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
-       match assd.cbs.get_entries().get(&acbe.id) {
+       match assd.cbs.get_cbentries().get(&acbe.id) {
         Some(_) => self.delete_confirm_mode = Some(acbe.id),
         None => assd
          .statusline_heap
@@ -1440,10 +1400,21 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       ActiveArea::Second => self.get_max_hoffset_second(cbs),
      };
 
-     let scroller = self.get_active_scroller();
+     match self.active_area {
+      ActiveArea::Main => {
+       self.scroller_main.set_max_hoffset(max_offset);
+       Pager::handle_event(&mut self.scroller_main, evt);
+      }
 
-     scroller.set_max_hoffset(max_offset);
-     Pager::handle_event(scroller, evt);
+      ActiveArea::Second => {
+       let mut current_entry = self.get_current_entry();
+       let current_entry = current_entry.as_deref_mut().map(|x| x.get_scroller_mut());
+       current_entry.map(|x| {
+        x.set_max_hoffset(max_offset);
+        Pager::handle_event(x, evt);
+       });
+      }
+     };
     }
    }
   }

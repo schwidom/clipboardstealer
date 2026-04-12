@@ -276,6 +276,8 @@ impl ClipboardReaderWriter {
 }
 
 pub mod cbentry {
+ use crate::scroller::Scroller;
+
  use super::CBType;
  use super::MyTime;
  use serde::Deserialize;
@@ -292,6 +294,8 @@ pub mod cbentry {
   text: OnceCell<Vec<String>>,
   #[serde(skip)]
   string_cache: OnceCell<String>,
+  #[serde(skip)]
+  scroller: Scroller,
  }
 
  #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,6 +321,7 @@ pub mod cbentry {
     data: json_entry.text.into_bytes(),
     text: OnceCell::default(),
     string_cache: OnceCell::default(),
+    scroller: Scroller::default(),
    }
   }
  }
@@ -329,6 +334,7 @@ pub mod cbentry {
     data: Vec::from(data),
     text: OnceCell::default(),
     string_cache: OnceCell::default(),
+    scroller: Scroller::default(),
    }
   }
 
@@ -348,6 +354,14 @@ pub mod cbentry {
 
   pub fn get_data(&self) -> &Vec<u8> {
    &self.data
+  }
+
+  pub fn get_scroller_mut(&mut self) -> &mut Scroller {
+   &mut self.scroller
+  }
+
+  pub fn get_scroller(&self) -> &Scroller {
+   &self.scroller
   }
 
   pub fn set_data(&mut self, data: &[u8]) {
@@ -388,6 +402,7 @@ pub mod cbentry {
     data: Vec::from(data),
     text: OnceCell::default(),
     string_cache: OnceCell::default(),
+    scroller: Scroller::default(),
    }
   }
  }
@@ -579,7 +594,7 @@ impl Clipboards {
   }
  }
 
- pub fn get_entries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
+ pub fn get_cbentries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
   &self.cbentries
  }
 
@@ -778,10 +793,6 @@ impl Clipboards {
 
  pub(crate) fn remove_by_seq(&mut self, id: AcbeId) {
   self.cbentries.remove(&id);
- }
-
- pub fn get_cbentries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
-  &self.cbentries
  }
 
  // never!

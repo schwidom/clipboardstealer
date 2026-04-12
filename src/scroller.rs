@@ -3,7 +3,7 @@ use std::{
  ops::Range,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scroller {
  /// can be freely defined
  windowlength: usize, // NOTE: u16 would be enough but lesser casting operations
