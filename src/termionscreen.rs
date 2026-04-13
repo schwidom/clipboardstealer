@@ -1224,7 +1224,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
      delete_confirm_mode: self.delete_confirm_mode,
      statusline_heap: assd.statusline_heap.clone(),
-     paused: self.paused,
+     paused: self.config.paused.is_paused(),
      active_area: self.active_area,
      theme_colors: theme_colors.clone(),
     };
@@ -1385,9 +1385,6 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('p'))) => {
      assd.sender.send(MyEvent::TogglePause).unwrap();
-    }
-    MyEvent::TogglePauseResult(paused) => {
-     self.paused = *paused;
     }
     MyEvent::Termion(Event::Key(Key::Char('/'))) => {
      self.regex_edit_mode = Some("".to_string());

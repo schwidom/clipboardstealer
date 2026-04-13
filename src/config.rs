@@ -119,6 +119,26 @@ pub fn sleep_default() {
  thread::sleep(DEFAULT_TIMEOUT);
 }
 
+#[derive(Default, Debug)]
+pub(crate) struct Paused {
+ pub paused: AtomicBool,
+}
+
+impl Paused {
+ pub(crate) fn new(value: bool) -> Self {
+  Self {
+   paused: AtomicBool::new(value),
+  }
+ }
+ pub(crate) fn is_paused(&self) -> bool {
+  self.paused.load(Ordering::Relaxed)
+ }
+
+ pub(crate) fn toggle(&self) {
+  self.paused.store(!self.is_paused(), Ordering::Relaxed);
+ }
+}
+
 // #[derive(Clone)]
 #[derive(Debug, Default)]
 pub struct Config {
@@ -133,6 +153,7 @@ pub struct Config {
  pub custom_theme_colors: Option<crate::color_theme::ThemeColors>,
  pub suspend_threads: RwLock<()>,
  pub suspended_threads: AtomicBool,
+ pub paused: Paused,
 }
 
 use crate::libmain::Args;
@@ -192,6 +213,7 @@ impl Config {
    custom_theme_colors,
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
+   paused: Paused::new(args.paused),
   }
  }
 

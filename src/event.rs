@@ -29,7 +29,6 @@ pub enum MyEvent {
  CbChanged(CBType, Option<Vec<u8>>),
  Tick,
  TogglePause,
- TogglePauseResult(bool),
 }
 
 impl MyEvent {

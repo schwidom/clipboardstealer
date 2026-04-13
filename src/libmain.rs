@@ -48,7 +48,7 @@ use crossbeam_skiplist::SkipMap;
 
 use crate::{
  clipboards::*,
- config::{sleep_default, Config},
+ config::{sleep_default, Config, Paused},
  constants::{DISPLAY, EDITOR},
  debug::*,
  event::MyEvent,
@@ -133,10 +133,6 @@ pub struct Args {
  pub(crate) convert_string_ndjson: Option<String>,
  #[arg(long, help = "output file for converted string ndjson")]
  pub(crate) to_bin_ndjson: Option<String>,
- #[arg(long, default_value_t = false, help = "provides debug information")]
- pub(crate) debug: bool,
- #[arg(long, help = "writes debug information into file")]
- pub(crate) debugfile: Option<String>,
  #[arg(short, long, default_value_t = crate::color_theme::ColorTheme::default(), help = "select color theme (default, nord, solarized, dracula)")]
  pub(crate) color_theme: crate::color_theme::ColorTheme,
  #[arg(long, default_value_t = false, help = "list available color themes")]
@@ -145,6 +141,14 @@ pub struct Args {
  pub(crate) load_color_theme: Option<String>,
  #[arg(long, help = "save current color theme to JSON file")]
  pub(crate) save_color_theme: Option<String>,
+
+ #[arg(long, help = "paused")]
+ pub(crate) paused: bool,
+
+ #[arg(long, default_value_t = false, help = "provides debug information")]
+ pub(crate) debug: bool,
+ #[arg(long, help = "writes debug information into file")]
+ pub(crate) debugfile: Option<String>,
 }
 
 #[derive(Debug)]
@@ -239,7 +243,7 @@ impl ClipboardThread {
       .collect();
 
      for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] && !ass.is_paused() && cb_strings2[i].is_some() {
+      if cb_strings2[i] != cb_strings[i] && !ass.paused.is_paused() && cb_strings2[i].is_some() {
        ass
         .sender
         .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
@@ -442,7 +446,7 @@ impl<'a> MouseThread<'a> {
 struct AppStateSender<'a> {
  config: &'static Config,
  running: &'a AtomicBool,
- paused: &'a AtomicBool,
+ paused: &'a Paused,
  sender: Sender<MyEvent>,
 }
 
@@ -450,7 +454,7 @@ impl<'a> AppStateSender<'a> {
  fn new(
   config: &'static Config,
   running: &'a AtomicBool,
-  paused: &'a AtomicBool,
+  paused: &'a Paused,
   sender: Sender<MyEvent>,
  ) -> Self {
   Self {
@@ -465,9 +469,6 @@ impl<'a> AppStateSender<'a> {
   self.running.load(Ordering::Relaxed)
  }
 
- fn is_paused(&self) -> bool {
-  self.paused.load(Ordering::Relaxed)
- }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -531,9 +532,9 @@ pub struct StatusLineHeap {
 }
 
 impl Default for StatusLineHeap {
-    fn default() -> Self {
-        Self::new()
-    }
+ fn default() -> Self {
+  Self::new()
+ }
 }
 
 impl StatusLineHeap {
@@ -660,7 +661,7 @@ impl AppStateReceiverData {
 
 pub struct AppStateReceiver<'a> {
  running: &'a AtomicBool,
- paused: &'a AtomicBool,
+ paused: &'a Paused,
  receiver: Receiver<MyEvent>,
  config: &'static Config,
  data: AppStateReceiverData,
@@ -671,7 +672,7 @@ impl<'a> AppStateReceiver<'a> {
  fn new(
   config: &'static Config,
   running: &'a AtomicBool,
-  paused: &'a AtomicBool,
+  paused: &'a Paused,
   receiver: Receiver<MyEvent>,
   sender: Sender<MyEvent>,
  ) -> Self {
@@ -895,11 +896,6 @@ impl<'a> AppStateReceiver<'a> {
 
       MyEvent::TogglePause => {
        self.toggle_paused();
-       self
-        .data
-        .sender
-        .send(MyEvent::TogglePauseResult(self.is_paused()))
-        .unwrap();
       }
       _ => {}
      }
@@ -911,13 +907,9 @@ impl<'a> AppStateReceiver<'a> {
   so.flush().unwrap();
  }
 
- fn is_paused(&self) -> bool {
-  self.paused.load(Ordering::Relaxed)
- }
-
  fn toggle_paused(&self) -> bool {
-  let current = self.is_paused();
-  self.paused.store(!current, Ordering::Relaxed);
+  let current = self.paused.is_paused();
+  self.paused.toggle();
   // current <=> "if ! paused", wenn die pause aufgehoben ist X11 clipboard fixations neu schreiben
   if current {
    self.data.cbs.refresh_fixation();
@@ -935,10 +927,10 @@ impl<'a> AppState<'a> {
  fn new(config: &'static Config) -> Self {
   let (sender, receiver) = mpsc::channel();
   let running: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
-  let paused: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
+  // let paused: &mut AtomicBool = Box::leak(Box::new(AtomicBool::new(config.paused)));
   Self {
-   ass: AppStateSender::new(config, running, paused, sender.clone()),
-   asr: AppStateReceiver::new(config, running, paused, receiver, sender),
+   ass: AppStateSender::new(config, running, &config.paused, sender.clone()),
+   asr: AppStateReceiver::new(config, running, &config.paused, receiver, sender),
   }
  }
 }
