@@ -43,6 +43,7 @@ pub struct ThemeColorsJson {
  pub window_bg: Option<String>,
  pub window_fg: Option<String>,
  pub cursor: Option<String>,
+ pub cursor_inactive: Option<String>,
  pub line_number: Option<String>,
  pub text: Option<String>,
  pub border: Option<String>,
@@ -56,6 +57,10 @@ impl ThemeColorsJson {
    window_bg: self.window_bg.as_ref().and_then(|s| parse_hex_color(s)),
    window_fg: self.window_fg.as_ref().and_then(|s| parse_hex_color(s)),
    cursor: self.cursor.as_ref().and_then(|s| parse_hex_color(s)),
+   cursor_inactive: self
+    .cursor_inactive
+    .as_ref()
+    .and_then(|s| parse_hex_color(s)),
    line_number: self.line_number.as_ref().and_then(|s| parse_hex_color(s)),
    text: self.text.as_ref().and_then(|s| parse_hex_color(s)),
    border: self.border.as_ref().and_then(|s| parse_hex_color(s)),
@@ -87,19 +92,32 @@ fn color_to_hex(c: &Option<Color>) -> Option<String> {
  }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[derive(Default)]
+fn dim_color(color: Option<Color>) -> Option<Color> {
+ color.map(|c| match c {
+  Color::Rgb(r, g, b) => {
+   let dim_factor = 0.6;
+   Color::Rgb(
+    (r as f32 * dim_factor) as u8,
+    (g as f32 * dim_factor) as u8,
+    (b as f32 * dim_factor) as u8,
+   )
+  }
+  _ => c,
+ })
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct ThemeColors {
  pub window_bg: Option<Color>,
  pub window_fg: Option<Color>,
  pub cursor: Option<Color>,
+ pub cursor_inactive: Option<Color>,
  pub line_number: Option<Color>,
  pub text: Option<Color>,
  pub border: Option<Color>,
  pub border_inactive: Option<Color>,
  pub menu: Option<Color>,
 }
-
 
 impl ColorTheme {
  pub fn get_colors(&self) -> ThemeColors {
@@ -108,14 +126,19 @@ impl ColorTheme {
 
  pub fn get_colors_with_override(&self, custom: Option<&ThemeColors>) -> ThemeColors {
   if let Some(colors) = custom {
-   return colors.clone();
+   let mut colors = colors.clone();
+   if colors.cursor_inactive.is_none() {
+    colors.cursor_inactive = dim_color(colors.cursor);
+   }
+   return colors;
   }
-  match self {
+  let mut colors = match self {
    ColorTheme::Default => ThemeColors::default(),
    ColorTheme::Nord => ThemeColors {
     window_bg: Some(Color::Rgb(0x29, 0x2E, 0x3A)),
     window_fg: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
     cursor: Some(Color::Rgb(0xBF, 0x61, 0x6A)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x4C, 0x56, 0x6A)),
     text: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
     border: Some(Color::Rgb(0x81, 0xA1, 0xC1)),
@@ -126,6 +149,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x00, 0x24, 0x2F)),
     window_fg: Some(Color::Rgb(0x83, 0x94, 0x96)),
     cursor: Some(Color::Rgb(0xB5, 0x89, 0x00)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x58, 0x6E, 0x75)),
     text: Some(Color::Rgb(0x83, 0x94, 0x96)),
     border: Some(Color::Rgb(0x26, 0x8B, 0xD2)),
@@ -136,6 +160,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x22, 0x24, 0x30)),
     window_fg: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     cursor: Some(Color::Rgb(0xFF, 0x79, 0xC6)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x62, 0x72, 0xA4)),
     text: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     border: Some(Color::Rgb(0xBD, 0x93, 0xF9)),
@@ -146,6 +171,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1D, 0x20, 0x21)),
     window_fg: Some(Color::Rgb(0xEB, 0xDB, 0xB2)),
     cursor: Some(Color::Rgb(0xFB, 0x49, 0x34)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x66, 0x55, 0x4B)),
     text: Some(Color::Rgb(0xEB, 0xDB, 0xB2)),
     border: Some(Color::Rgb(0xFE, 0x86, 0x29)),
@@ -156,6 +182,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x27, 0x28, 0x22)),
     window_fg: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     cursor: Some(Color::Rgb(0xF9, 0x26, 0x72)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x58, 0x5E, 0x5E)),
     text: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
     border: Some(Color::Rgb(0xA6, 0xE2, 0x2E)),
@@ -166,6 +193,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x28, 0x2C, 0x34)),
     window_fg: Some(Color::Rgb(0xAB, 0xB2, 0xBF)),
     cursor: Some(Color::Rgb(0xE5, 0xC0, 0x7B)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x4B, 0x52, 0x63)),
     text: Some(Color::Rgb(0xAB, 0xB2, 0xBF)),
     border: Some(Color::Rgb(0x61, 0xAF, 0xEF)),
@@ -176,6 +204,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1E, 0x1E, 0x2E)),
     window_fg: Some(Color::Rgb(0xCD, 0xD6, 0xF4)),
     cursor: Some(Color::Rgb(0xF5, 0xC2, 0xE7)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x45, 0x45, 0x5A)),
     text: Some(Color::Rgb(0xCD, 0xD6, 0xF4)),
     border: Some(Color::Rgb(0x89, 0xB4, 0xFA)),
@@ -186,6 +215,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1A, 0x1B, 0x26)),
     window_fg: Some(Color::Rgb(0xA9, 0xB1, 0xD6)),
     cursor: Some(Color::Rgb(0xBB, 0x9A, 0xF7)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x36, 0x43, 0x56)),
     text: Some(Color::Rgb(0xA9, 0xB1, 0xD6)),
     border: Some(Color::Rgb(0x7A, 0xA2, 0xE3)),
@@ -196,6 +226,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x0A, 0x0E, 0x14)),
     window_fg: Some(Color::Rgb(0xB3, 0xB1, 0xAD)),
     cursor: Some(Color::Rgb(0xFF, 0x99, 0x00)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x4A, 0x4D, 0x52)),
     text: Some(Color::Rgb(0xB3, 0xB1, 0xAD)),
     border: Some(Color::Rgb(0x39, 0xBA, 0xE6)),
@@ -206,6 +237,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x0D, 0x11, 0x17)),
     window_fg: Some(Color::Rgb(0xC9, 0xD1, 0xD9)),
     cursor: Some(Color::Rgb(0x58, 0xA6, 0xFF)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x48, 0x4F, 0x5A)),
     text: Some(Color::Rgb(0xC9, 0xD1, 0xD9)),
     border: Some(Color::Rgb(0x1F, 0x6F, 0xEB)),
@@ -216,6 +248,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x26, 0x32, 0x38)),
     window_fg: Some(Color::Rgb(0xEE, 0xFF, 0xFF)),
     cursor: Some(Color::Rgb(0x80, 0xCB, 0xFC)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x54, 0x67, 0x75)),
     text: Some(Color::Rgb(0xEE, 0xFF, 0xFF)),
     border: Some(Color::Rgb(0x82, 0xAA, 0xFF)),
@@ -226,6 +259,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1B, 0x2B, 0x34)),
     window_fg: Some(Color::Rgb(0xC0, 0xC5, 0xCE)),
     cursor: Some(Color::Rgb(0xEC, 0x5F, 0x67)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x3B, 0x50, 0x62)),
     text: Some(Color::Rgb(0xC0, 0xC5, 0xCE)),
     border: Some(Color::Rgb(0x66, 0x99, 0xBB)),
@@ -236,6 +270,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x29, 0x27, 0x3D)),
     window_fg: Some(Color::Rgb(0xA7, 0xA6, 0xB2)),
     cursor: Some(Color::Rgb(0xC3, 0x3D, 0xEE)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x62, 0x5D, 0x7A)),
     text: Some(Color::Rgb(0xA7, 0xA6, 0xB2)),
     border: Some(Color::Rgb(0x89, 0xDD, 0xFF)),
@@ -246,6 +281,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x0A, 0x19, 0x2B)),
     window_fg: Some(Color::Rgb(0xBB, 0xD0, 0xE0)),
     cursor: Some(Color::Rgb(0x4F, 0xB6, 0xDB)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x1C, 0x2D, 0x42)),
     text: Some(Color::Rgb(0xBB, 0xD0, 0xE0)),
     border: Some(Color::Rgb(0x36, 0x89, 0xB0)),
@@ -256,6 +292,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1E, 0x1E, 0x1E)),
     window_fg: Some(Color::Rgb(0xD4, 0xD4, 0xD4)),
     cursor: Some(Color::Rgb(0x00, 0x9A, 0xCE)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x85, 0x85, 0x85)),
     text: Some(Color::Rgb(0xD4, 0xD4, 0xD4)),
     border: Some(Color::Rgb(0x00, 0x7F, 0xC8)),
@@ -266,6 +303,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x1C, 0x1E, 0x28)),
     window_fg: Some(Color::Rgb(0xCB, 0xD0, 0xDC)),
     cursor: Some(Color::Rgb(0xEF, 0xB4, 0x93)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x4B, 0x4E, 0x5F)),
     text: Some(Color::Rgb(0xCB, 0xD0, 0xDC)),
     border: Some(Color::Rgb(0x2A, 0xB3, 0xBD)),
@@ -276,6 +314,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x0B, 0x14, 0x1F)),
     window_fg: Some(Color::Rgb(0xD2, 0x70, 0xA1)),
     cursor: Some(Color::Rgb(0xFC, 0xA4, 0x7C)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x2B, 0x38, 0x4C)),
     text: Some(Color::Rgb(0xD2, 0x70, 0xA1)),
     border: Some(Color::Rgb(0x82, 0xAA, 0xFF)),
@@ -286,6 +325,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x26, 0x17, 0x3A)),
     window_fg: Some(Color::Rgb(0xF7, 0xEE, 0xE8)),
     cursor: Some(Color::Rgb(0xFF, 0x79, 0xC6)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x52, 0x33, 0x66)),
     text: Some(Color::Rgb(0xF7, 0xEE, 0xE8)),
     border: Some(Color::Rgb(0x00, 0xD8, 0xFF)),
@@ -296,6 +336,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x00, 0x05, 0x12)),
     window_fg: Some(Color::Rgb(0xFF, 0xB8, 0x67)),
     cursor: Some(Color::Rgb(0xFF, 0x00, 0xFF)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x2E, 0x24, 0x3A)),
     text: Some(Color::Rgb(0xFF, 0xB8, 0x67)),
     border: Some(Color::Rgb(0x00, 0xF0, 0xFF)),
@@ -306,6 +347,7 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x26, 0x26, 0x2D)),
     window_fg: Some(Color::Rgb(0xEA, 0xE6, 0xDE)),
     cursor: Some(Color::Rgb(0xFF, 0x00, 0x41)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x46, 0x44, 0x50)),
     text: Some(Color::Rgb(0xEA, 0xE6, 0xDE)),
     border: Some(Color::Rgb(0x2B, 0xB5, 0xC6)),
@@ -316,13 +358,18 @@ impl ColorTheme {
     window_bg: Some(Color::Rgb(0x26, 0x1C, 0x1C)),
     window_fg: Some(Color::Rgb(0xF5, 0x9C, 0xA4)),
     cursor: Some(Color::Rgb(0xFF, 0x72, 0x8E)),
+     cursor_inactive: None,
     line_number: Some(Color::Rgb(0x52, 0x34, 0x36)),
     text: Some(Color::Rgb(0xF5, 0x9C, 0xA4)),
     border: Some(Color::Rgb(0xDA, 0x6F, 0x7C)),
     border_inactive: Some(Color::Rgb(0x52, 0x34, 0x36)),
     menu: Some(Color::Rgb(0x56, 0x46, 0x46)),
    },
+  };
+  if colors.cursor_inactive.is_none() {
+   colors.cursor_inactive = dim_color(colors.cursor);
   }
+  colors
  }
 
  pub fn all_themes() -> &'static [(&'static str, ColorTheme)] {
@@ -358,6 +405,7 @@ impl ColorTheme {
    window_bg: color_to_hex(&colors.window_bg),
    window_fg: color_to_hex(&colors.window_fg),
    cursor: color_to_hex(&colors.cursor),
+   cursor_inactive: color_to_hex(&colors.cursor_inactive),
    line_number: color_to_hex(&colors.line_number),
    text: color_to_hex(&colors.text),
    border: color_to_hex(&colors.border),

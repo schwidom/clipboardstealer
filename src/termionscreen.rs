@@ -478,6 +478,7 @@ struct LineStringsConfig<'a> {
  line_count: Option<usize>,
  hoffset: usize,
  theme_colors: ThemeColors,
+ cursor_color: Option<ratatui::style::Color>,
 }
 
 impl<'a> LineStringsConfig<'a> {
@@ -495,8 +496,13 @@ impl<'a> LineStringsConfig<'a> {
      self.hoffset,
     );
 
-    let cursor_style =
-     if let Some(color) = self.theme_colors.cursor { Style::new().fg(color) } else { Style::new() };
+    let cursor_style = if let Some(color) = self.cursor_color {
+     Style::new().fg(color)
+    } else if let Some(color) = self.theme_colors.cursor {
+     Style::new().fg(color)
+    } else {
+     Style::new()
+    };
 
     let line_number_style = if let Some(color) = self.theme_colors.line_number {
      Style::new().fg(color)
@@ -1208,6 +1214,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       line_count: Some(entries.len()),
       hoffset: self.scroller_main.get_hoffset(),
       theme_colors: theme_colors.clone(),
+      cursor_color: if self.active_area == ActiveArea::Second {
+       theme_colors.cursor_inactive
+      } else {
+       None
+      },
      },
      all_lines2: LineStringsConfig {
       line_strings: &all_lines2,
@@ -1218,6 +1229,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       // hoffset: self.scroller_second.get_hoffset(),
       hoffset: hoffset_second,
       theme_colors: theme_colors.clone(),
+      cursor_color: if self.active_area == ActiveArea::Main {
+       theme_colors.cursor_inactive
+      } else {
+       None
+      },
      },
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
@@ -1610,6 +1626,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
      line_count: Some(string_lines.len()),
      hoffset: self.scroller.get_hoffset(),
      theme_colors: theme_colors.clone(),
+     cursor_color: None,
     },
     all_lines2: LineStringsConfig::default(),
     regex_edit_mode: None,

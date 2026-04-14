@@ -257,6 +257,7 @@ impl Config {
   Self::color_eq(&a.window_bg, &b.window_bg)
    && Self::color_eq(&a.window_fg, &b.window_fg)
    && Self::color_eq(&a.cursor, &b.cursor)
+   && Self::color_eq(&a.cursor_inactive, &b.cursor_inactive)
    && Self::color_eq(&a.line_number, &b.line_number)
    && Self::color_eq(&a.text, &b.text)
    && Self::color_eq(&a.border, &b.border)
