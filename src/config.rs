@@ -41,10 +41,16 @@ Options:
           converts string ndjson to bin ndjson (input file)
       --to-bin-ndjson <TO_BIN_NDJSON>
           output file for converted string ndjson
-      -c, --color <COLOR>
-          select color theme (default, nord, solarized, dracula)
+      --load-color-theme <LOAD_COLOR_THEME>
+          load color theme from JSON file
+      --save-color-theme <SAVE_COLOR_THEME>
+          save current color theme to JSON file
+      -c, --color-theme <COLOR_THEME>
+          select color theme (default, nord, solarized, dracula) [default: default]
       --color-themes
           list available color themes
+      --paused
+          paused
       --debug
           provides debug information
       --debugfile <DEBUGFILE>
