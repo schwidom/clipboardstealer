@@ -222,9 +222,9 @@ impl ClipboardThread {
    .unwrap()
  }
 
- fn refresh_asr<'a>(
+ fn refresh_asr(
   &self,
-  asr: &'a AppStateReceiver,
+  asr: &AppStateReceiver,
   // cfmap: &HashMap<CBType, ClipboardFixation>,
  ) {
   let cbtype = self.cbtype.clone();
@@ -980,7 +980,7 @@ impl<'a> AppStateReceiver<'a> {
     // ct.refresh(&appstate.ass);
     // ct.refresh(&self.data.sender);
     // ct.refresh(&self.data.ass.sender);
-    ct.refresh_asr(&self);
+    ct.refresh_asr(self);
    }
    self.data.cbs.refresh_fixation();
   }

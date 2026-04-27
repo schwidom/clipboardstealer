@@ -1058,15 +1058,12 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
-     match entry {
-      FilteredCbsEntries::ACE(appended_cbentry) => {
-       let mut bm = appended_cbentry.cbentry.borrow_mut();
-       // etzwepgkfl
-       bm.get_scroller_mut().set_hwindowlength(self.second_width);
-       // etzwepgkfl
-       bm.get_scroller_mut().set_windowlength(second_area_height);
-      }
-      _ => {}
+     if let FilteredCbsEntries::ACE(appended_cbentry) = entry {
+      let mut bm = appended_cbentry.cbentry.borrow_mut();
+      // etzwepgkfl
+      bm.get_scroller_mut().set_hwindowlength(self.second_width);
+      // etzwepgkfl
+      bm.get_scroller_mut().set_windowlength(second_area_height);
      }
 
      // if &FilteredCbsEntries::ACE( entry) = entry {
@@ -1089,7 +1086,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
        let selection_star = if is_selected { "*" } else { " " };
 
-       let mut cbentry_borrowed = cbentry.borrow_mut();
+       let cbentry_borrowed = cbentry.borrow_mut();
 
        if is_cursor {
         if self.prev_selected_text.as_ref() != Some(cbentry_borrowed.get_data()) {
