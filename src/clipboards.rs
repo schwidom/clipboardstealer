@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use tracing::trace;
 use x11_clipboard as x11;
-// use x11_clipboard::error::Error as X11Error;
+use x11_clipboard::error::Error as X11Error;
 
 // use x11::Atoms;
 
@@ -104,61 +104,61 @@ pub struct ClipboardReaderWriter {
  echofree_read: AtomicBool,
 }
 
-#[cfg(test)]
-pub trait ClipboardReaderTrait: Send {
- fn crw_read(&self) -> Option<Vec<u8>>;
- fn crw_write(&self, s: String) -> bool;
- fn cbtype(&self) -> CBType;
- fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>>;
-}
+// #[cfg(test)]
+// pub trait ClipboardReaderTrait: Send {
+//  fn crw_read(&self) -> Option<Vec<u8>>;
+//  fn crw_write(&self, s: String) -> bool;
+//  fn cbtype(&self) -> CBType;
+//  fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>>;
+// }
 
-#[cfg(test)]
-pub struct MockClipboardReaderWriter {
- read_data: RefCell<Option<Vec<u8>>>,
- written_data: RefCell<Vec<Vec<u8>>>,
- cbtype: CBType,
- echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
-}
+// #[cfg(test)]
+// pub struct MockClipboardReaderWriter {
+//  read_data: RefCell<Option<Vec<u8>>>,
+//  written_data: RefCell<Vec<Vec<u8>>>,
+//  cbtype: CBType,
+//  echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
+// }
 
-#[cfg(test)]
-impl MockClipboardReaderWriter {
- pub fn new(cbtype: CBType) -> Self {
-  Self {
-   read_data: RefCell::new(None),
-   written_data: RefCell::new(Vec::new()),
-   cbtype,
-   echofree: Arc::new(Mutex::new(HashSet::new())),
-  }
- }
+// #[cfg(test)]
+// impl MockClipboardReaderWriter {
+//  pub fn new(cbtype: CBType) -> Self {
+//   Self {
+//    read_data: RefCell::new(None),
+//    written_data: RefCell::new(Vec::new()),
+//    cbtype,
+//    echofree: Arc::new(Mutex::new(HashSet::new())),
+//   }
+//  }
 
- pub fn set_read_data(&self, data: Vec<u8>) {
-  *self.read_data.borrow_mut() = Some(data);
- }
+//  pub fn set_read_data(&self, data: Vec<u8>) {
+//   *self.read_data.borrow_mut() = Some(data);
+//  }
 
- pub fn get_written(&self) -> Vec<Vec<u8>> {
-  self.written_data.borrow().clone()
- }
-}
+//  pub fn get_written(&self) -> Vec<Vec<u8>> {
+//   self.written_data.borrow().clone()
+//  }
+// }
 
-#[cfg(test)]
-impl ClipboardReaderTrait for MockClipboardReaderWriter {
- fn crw_read(&self) -> Option<Vec<u8>> {
-  self.read_data.borrow_mut().take()
- }
+// #[cfg(test)]
+// impl ClipboardReaderTrait for MockClipboardReaderWriter {
+//  fn crw_read(&self) -> Option<Vec<u8>> {
+//   self.read_data.borrow_mut().take()
+//  }
 
- fn crw_write(&self, s: String) -> bool {
-  self.written_data.borrow_mut().push(s.into_bytes());
-  true
- }
+//  fn crw_write(&self, s: String) -> bool {
+//   self.written_data.borrow_mut().push(s.into_bytes());
+//   true
+//  }
 
- fn cbtype(&self) -> CBType {
-  self.cbtype.clone()
- }
+//  fn cbtype(&self) -> CBType {
+//   self.cbtype.clone()
+//  }
 
- fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>> {
-  self.echofree.clone()
- }
-}
+//  fn echofree(&self) -> Arc<Mutex<HashSet<Vec<u8>>>> {
+//   self.echofree.clone()
+//  }
+// }
 
 #[derive(Default, PartialEq)]
 pub struct CrwReadInfo {
@@ -213,13 +213,8 @@ impl ClipboardReaderWriter {
  // $ xclip -o -selection clipboard
  // clipboard
 
- pub fn crw_read(&self) -> Option<Vec<u8>> {
-  let selection = self.atom;
-
-  match self
-   .cb
-   .load(selection, CB_ATOMS.utf8_string, CB_ATOMS.property, Duration::from_secs(3))
-  {
+ fn crw_read(&self, res: Result<Vec<u8>, X11Error>) -> Option<Vec<u8>> {
+  match res {
    Ok(selection_u8) => {
     let mut echofree = self.echofree.lock().unwrap();
     let text = selection_u8;
@@ -245,6 +240,26 @@ impl ClipboardReaderWriter {
 
    Err(_) => None,
   }
+ }
+
+ pub fn crw_read_blocking(&self) -> Option<Vec<u8>> {
+  let selection = self.atom;
+  self.crw_read(
+   self
+    .cb
+    // .load(selection, CB_ATOMS.utf8_string, CB_ATOMS.property, Duration::from_secs(3))
+    .load_wait(selection, CB_ATOMS.utf8_string, CB_ATOMS.property),
+  )
+ }
+
+ pub fn crw_read_nonblocking(&self) -> Option<Vec<u8>> {
+  let selection = self.atom;
+  self.crw_read(self.cb.load(
+   selection,
+   CB_ATOMS.utf8_string,
+   CB_ATOMS.property,
+   Duration::from_secs(3),
+  ))
  }
 
  pub fn crw_write(&self, s: String) -> bool {
@@ -849,24 +864,24 @@ mod crw_tests {
   let cbrw_s = ClipboardReaderWriter::from_cbtype(&super::CBType::Primary).unwrap();
   cbrw_s.crw_write_echofree("abc".into());
   // cbrw_s.crw_write("abc".into());
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(None, x);
   std::thread::sleep(Duration::from_millis(sleep_msecs));
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(None, x);
   std::thread::sleep(Duration::from_millis(sleep_msecs));
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(None, x);
 
   cbrw_s.crw_write("def".into());
 
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(Some("def".into()), x);
   std::thread::sleep(Duration::from_millis(sleep_msecs));
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(Some("def".into()), x);
   std::thread::sleep(Duration::from_millis(sleep_msecs));
-  let x = cbrw_s.crw_read();
+  let x = cbrw_s.crw_read_nonblocking();
   assert_eq!(Some("def".into()), x);
 
   // assert_eq!("abc", x.unwrap());

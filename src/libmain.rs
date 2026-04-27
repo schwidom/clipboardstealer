@@ -1,6 +1,7 @@
 // #![allow(dead_code)]
 // #![allow(unused)]
 
+extern crate enum_iterator;
 // extern crate clipboard;
 extern crate clap;
 extern crate termion;
@@ -14,6 +15,8 @@ use termion::{
  input::TermRead,
  is_tty,
 };
+
+use enum_iterator::all;
 
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
@@ -202,63 +205,124 @@ impl TicksThread {
 }
 
 /** waits for clipboard events and handles them */
-pub struct ClipboardThread {}
+pub struct ClipboardThread {
+ cbtype: CBType,
+ echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
+}
 
 impl ClipboardThread {
- fn new() -> Self {
-  Self {}
+ fn new(cbtype: CBType, cfmap: &HashMap<CBType, ClipboardFixation>) -> Self {
+  let echofree = cfmap[&cbtype].crw.echofree();
+  // let crw = ClipboardReaderWriter::from_cbtype_with_echofree(&cbtype, echofree).unwrap();
+  Self { cbtype, echofree }
+ }
+
+ fn getCrw(&self) -> ClipboardReaderWriter {
+  ClipboardReaderWriter::from_cbtype_with_echofree(&self.cbtype, Arc::clone(&self.echofree))
+   .unwrap()
+ }
+
+ fn refresh_asr<'a>(
+  &self,
+  asr: &'a AppStateReceiver,
+  // cfmap: &HashMap<CBType, ClipboardFixation>,
+ ) {
+  let cbtype = self.cbtype.clone();
+  let crw = self.getCrw();
+
+  {
+   {
+    {
+     asr.config.wait_for_external_program();
+     if !asr.is_running() {
+      return;
+     }
+     let cb_string2 = crw.crw_read_nonblocking();
+
+     {
+      // if cb_strings2[i] != cb_strings[i] && !ass.paused.is_paused() && cb_strings2[i].is_some() {}
+      if !asr.paused.is_paused() && cb_string2.is_some() {
+       asr
+        .data
+        .sender
+        .send(MyEvent::CbChanged(cbtype.clone(), cb_string2.clone()))
+        .unwrap();
+      }
+     }
+
+     // sleep_default(); // cgyeofnrzk
+    }
+   }
+  }
+ }
+ fn refresh(
+  &self,
+  ass: &'static AppStateSender,
+  // cfmap: &HashMap<CBType, ClipboardFixation>,
+ ) {
+  let cbtype = self.cbtype.clone();
+  let crw = self.getCrw();
+
+  {
+   {
+    {
+     ass.config.wait_for_external_program();
+     if !ass.is_running() {
+      return;
+     }
+     let cb_string2 = crw.crw_read_nonblocking();
+
+     {
+      // if cb_strings2[i] != cb_strings[i] && !ass.paused.is_paused() && cb_strings2[i].is_some() {}
+      if !ass.paused.is_paused() && cb_string2.is_some() {
+       ass
+        .sender
+        .send(MyEvent::CbChanged(cbtype.clone(), cb_string2.clone()))
+        .unwrap();
+      }
+     }
+
+     // sleep_default(); // cgyeofnrzk
+    }
+   }
+  }
  }
 
  fn run(
-  &mut self,
+  &self,
   ass: &'static AppStateSender,
-  cfmap: &HashMap<CBType, ClipboardFixation>,
+  // cfmap: &HashMap<CBType, ClipboardFixation>,
  ) -> JoinHandle<Result<(), CbsError>> {
-  let echofree_vec: Vec<(CBType, Arc<Mutex<HashSet<Vec<u8>>>>)> = cfmap
-   .iter()
-   .map(|(cbtype, cf)| (cbtype.clone(), cf.crw.echofree()))
-   .collect();
+  // let (cbtype, crw) = (self.cbtype, self.crw).clone();
+  // let selfclone = self.clone();
+  let cbtype = self.cbtype.clone();
+  let crw = self.getCrw();
 
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
-   let crws: Vec<ClipboardReaderWriter> = echofree_vec
-    .iter()
-    .filter_map(|(cbtype, echofree): &(CBType, Arc<Mutex<HashSet<Vec<u8>>>>)| {
-     ClipboardReaderWriter::from_cbtype_with_echofree(cbtype, echofree.clone()).ok()
-    })
-    .collect();
-
-   if !crws.is_empty() {
-    // let mut cb_strings: Vec<_> = crws.iter().map(|x| x.read()).collect();
-    let mut cb_strings: Vec<_> = crws.iter().map(|_| None).collect();
-
+   {
     loop {
      ass.config.wait_for_external_program();
      if !ass.is_running() {
       break Ok(());
      }
+     let cb_string2 = crw.crw_read_blocking();
 
-     let cb_strings2: Vec<_> = crws
-      .iter()
-      .map(|x: &ClipboardReaderWriter| x.crw_read())
-      .collect();
-
-     for i in 0..cb_strings.len() {
-      if cb_strings2[i] != cb_strings[i] && !ass.paused.is_paused() && cb_strings2[i].is_some() {
+     {
+      // if cb_strings2[i] != cb_strings[i] && !ass.paused.is_paused() && cb_strings2[i].is_some() {}
+      if !ass.paused.is_paused() && cb_string2.is_some() {
        ass
         .sender
-        .send(MyEvent::CbChanged(crws[i].cbtype(), cb_strings2[i].clone()))
+        .send(MyEvent::CbChanged(cbtype.clone(), cb_string2.clone()))
         .unwrap();
-       cb_strings[i] = cb_strings2[i].clone();
       }
      }
 
-     // cb_strings = cb_strings2;
-
      sleep_default(); // cgyeofnrzk
     }
-   } else {
-    Ok(())
    }
+   // else {
+   //  Ok(())
+   // }
   });
   thread
  }
@@ -468,7 +532,6 @@ impl<'a> AppStateSender<'a> {
  fn is_running(&self) -> bool {
   self.running.load(Ordering::Relaxed)
  }
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -912,6 +975,13 @@ impl<'a> AppStateReceiver<'a> {
   self.paused.toggle();
   // current <=> "if ! paused", wenn die pause aufgehoben ist X11 clipboard fixations neu schreiben
   if current {
+   for cbtype in all::<CBType>() {
+    let ct = ClipboardThread::new(cbtype, &self.data.cbs.cfmap);
+    // ct.refresh(&appstate.ass);
+    // ct.refresh(&self.data.sender);
+    // ct.refresh(&self.data.ass.sender);
+    ct.refresh_asr(&self);
+   }
    self.data.cbs.refresh_fixation();
   }
   !current
@@ -1125,8 +1195,11 @@ pub fn main() {
  let mut tt = TicksThread::new();
  let ttjh = tt.run(&appstate.ass);
 
- let mut ct = ClipboardThread::new();
- let ctjh = ct.run(&appstate.ass, &appstate.asr.data.cbs.cfmap);
+ for cbtype in all::<CBType>() {
+  let ct = ClipboardThread::new(cbtype, &appstate.asr.data.cbs.cfmap);
+  ct.refresh(&appstate.ass);
+  let _ctjh = ct.run(&appstate.ass);
+ }
 
  if config.debug {
   monitor2("ms");
@@ -1159,11 +1232,11 @@ pub fn main() {
 
  ttjh.join().unwrap().unwrap(); // needed
 
- if config.debug {
-  monitor2("ctjh.join()");
- }
+ // if config.debug {
+ //  monitor2("ctjh.join()");
+ // }
 
- ctjh.join().unwrap().unwrap(); // needed
+ // ctjh.join().unwrap().unwrap(); // no longer needed (is blocking)
 
  if config.debug {
   monitor2("mtjh.join()");
