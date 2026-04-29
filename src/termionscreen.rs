@@ -753,8 +753,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
    let all_lines2 = self.all_lines2.prepare2print(safe_area);
 
    // let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
-   let all_lines_flattened2: Vec<Line<'_>> =
-    all_lines2.iter().flatten().cloned().collect();
+   let all_lines_flattened2: Vec<Line<'_>> = all_lines2.iter().flatten().cloned().collect();
    let paragraph2 = Paragraph::new(all_lines_flattened2)
     .block(block2)
     .left_aligned();
@@ -1383,9 +1382,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      },
     };
 
-    {
+    if let Some(second_main_area) = rv.pl.get_second_main_area() {
      let window_wraps = all_lines2
-      .prepare2print(*rv.pl.get_main_area())
+      .prepare2print(*second_main_area)
       .iter()
       .map(|x| x.len())
       .collect::<Vec<_>>();
@@ -1400,7 +1399,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      };
      // let mut bm = selected_cbentry.map( |x| x.borrow_mut());
      // self.scroller_main.set_wrapped_window_length(&window_wraps);
-     if let Some(x) = scroller_second { x.set_wrapped_window_length(&window_wraps) }
+     if let Some(x) = scroller_second {
+      x.set_wrapped_window_length(&window_wraps)
+     }
     }
 
     let sw = TwoScreenDefaultWidget {
