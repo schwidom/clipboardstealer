@@ -6,7 +6,6 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use std::fs::{File, OpenOptions};
-use std::ops::Deref;
 use std::path::PathBuf;
 
 use std::rc::Rc;
@@ -24,7 +23,6 @@ use crate::libmain::{AppStateReceiverData, StatusLineHeap, StatusSeverity};
 use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
-use crate::scroller::WrapScroller;
 use crate::tools::{flatline, tabfix};
 
 use enum_iterator::all;
@@ -32,7 +30,7 @@ use mktemp::Temp;
 use ratatui::layout::{Alignment, Margin, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, BorderType, Paragraph, Widget};
 use ratatui::DefaultTerminal;
 use termion::event::{Event, Key};
 use termion::{self};
@@ -96,7 +94,7 @@ pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<&str> {
 
   ret.push(truncated.0);
 
-  if truncated.1 == "" {
+  if truncated.1.is_empty() {
    break;
   }
   a = truncated.1;
@@ -726,7 +724,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   //  .map(|all_lines| Paragraph::new(all_lines.clone()).block(block).left_aligned())
   //  .collect();
 
-  let all_lines_flattened: Vec<Line<'_>> = all_lines.iter().flatten().map(|x| x.clone()).collect();
+  let all_lines_flattened: Vec<Line<'_>> = all_lines.iter().flatten().cloned().collect();
   // let all_lines_flattened = all_lines.iter().flatten().collect::<Vec<Line<'_>>>();
   let paragraph = Paragraph::new(all_lines_flattened)
    .block(block)
@@ -756,7 +754,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    // let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
    let all_lines_flattened2: Vec<Line<'_>> =
-    all_lines2.iter().flatten().map(|x| x.clone()).collect();
+    all_lines2.iter().flatten().cloned().collect();
    let paragraph2 = Paragraph::new(all_lines_flattened2)
     .block(block2)
     .left_aligned();
@@ -1361,7 +1359,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     {
      let window_wraps = all_lines
-      .prepare2print(rv.pl.get_main_area().clone())
+      .prepare2print(*rv.pl.get_main_area())
       .iter()
       .map(|x| x.len())
       .collect::<Vec<_>>();
@@ -1387,7 +1385,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
 
     {
      let window_wraps = all_lines2
-      .prepare2print(rv.pl.get_main_area().clone())
+      .prepare2print(*rv.pl.get_main_area())
       .iter()
       .map(|x| x.len())
       .collect::<Vec<_>>();
@@ -1402,7 +1400,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      };
      // let mut bm = selected_cbentry.map( |x| x.borrow_mut());
      // self.scroller_main.set_wrapped_window_length(&window_wraps);
-     scroller_second.map(|x| x.set_wrapped_window_length(&window_wraps));
+     if let Some(x) = scroller_second { x.set_wrapped_window_length(&window_wraps) }
     }
 
     let sw = TwoScreenDefaultWidget {
@@ -1804,7 +1802,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
 
    {
     let window_wraps = all_lines
-     .prepare2print(rv.pl.get_main_area().clone())
+     .prepare2print(*rv.pl.get_main_area())
      .iter()
      .map(|x| x.len())
      .collect::<Vec<_>>();

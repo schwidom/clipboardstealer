@@ -324,15 +324,15 @@ impl Scroller {
  fn wrapped_window_length(windowlength: usize, window_wraps: &[usize]) -> usize {
   let rs = window_wraps.iter().enumerate().scan(0, |state, (e, x)| {
    *state += x;
-   let ret = state.clone();
+   let ret = *state;
    if ret <= windowlength {
     Some(1 + e)
    } else {
     None
    }
   });
-  let rs = rs.last().unwrap_or(1);
-  rs
+  
+  rs.last().unwrap_or(1)
  }
 
  pub(crate) fn set_wrapped_window_length(&mut self, window_wraps: &[usize]) {
