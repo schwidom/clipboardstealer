@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use std::fs::{File, OpenOptions};
+use std::ops::Deref;
 use std::path::PathBuf;
 
 use std::rc::Rc;
@@ -23,6 +24,7 @@ use crate::libmain::{AppStateReceiverData, StatusLineHeap, StatusSeverity};
 use crate::linuxeditor;
 use crate::pager::Pager;
 use crate::scroller::Scroller;
+use crate::scroller::WrapScroller;
 use crate::tools::{flatline, tabfix};
 
 use enum_iterator::all;
@@ -71,6 +73,38 @@ fn truncate_before_or_at_display_width(text: &str, width: usize) -> &str {
  &text[0..last_idx]
 }
 
+fn truncate_before_or_at_display_width2(text: &str, width: usize) -> (&str, &str) {
+ let last_idx = text
+  .char_indices()
+  .map(|(pos, char)| {
+   let w1 = pos + char.len_utf8();
+   let w2 = text[0..pos].width() + char.width().unwrap_or(0);
+   (w1, w2)
+  })
+  .take_while(|(_, w2)| *w2 <= width)
+  .map(|(w1, _w2)| w1)
+  .last()
+  .unwrap_or(0);
+ (&text[0..last_idx], &text[last_idx..])
+}
+
+pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<&str> {
+ let mut ret: Vec<&str> = Vec::new();
+ let mut a = text;
+ loop {
+  let truncated = truncate_before_or_at_display_width2(a, width);
+
+  ret.push(truncated.0);
+
+  if truncated.1 == "" {
+   break;
+  }
+  a = truncated.1;
+ }
+
+ ret
+}
+
 fn render_scroller_lines4<T>(
  scroller: &mut Scroller,
  items: &[T],
@@ -82,7 +116,7 @@ fn render_scroller_lines4<T>(
  let mut lines = vec![];
 
  for (idx, item) in items[scroller.get_safe_windowrange()].iter().enumerate() {
-  let is_cursor = match scroller.get_cursor() {
+  let is_cursor = match scroller.get_cursor_in_window() {
    None => false,
    Some(value) => idx == value,
   };
@@ -102,7 +136,7 @@ mod unicode_tests {
  // use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
  use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk
 
- use super::truncate_before_or_at_display_width;
+ use super::{truncate_before_or_at_display_width, wrap_text};
 
  #[test]
  fn test_001() {
@@ -128,6 +162,13 @@ mod unicode_tests {
   assert_eq!("", truncate_before_or_at_display_width("🧑", 1));
   assert_eq!("🧑", truncate_before_or_at_display_width("🧑", 2));
   assert_eq!("🧑", truncate_before_or_at_display_width("🧑", 3));
+ }
+
+ #[test]
+ fn test_wrap_text() {
+  let text = "1234567890";
+
+  assert_eq!(wrap_text(text, 3), ["123", "456", "789", "0"]);
  }
 }
 
@@ -426,6 +467,27 @@ fn apply_hoffset_and_trim_line3<'a>(
  )
 }
 
+fn apply_hoffset_and_trim_line3_array<'a>(
+ text1: &'a str,
+ text2: &'a str,
+ rect: Rect,
+ hoffset: usize,
+) -> (String, Vec<String>) {
+ let max_width = rect.width as usize;
+ // let max_height = rect.height as usize;
+ // let offset_text = apply_horizontal_offset_line(text, hoffset);
+ let (offset_text1, offset_text2) = apply_horizontal_offset_line3(text1, text2, hoffset);
+ let w = offset_text1.width();
+ let max_width = max_width.saturating_sub(w);
+ (
+  offset_text1.to_string(),
+  wrap_text(&offset_text2, max_width)
+   .iter()
+   .map(|x| x.to_string())
+   .collect(),
+ )
+}
+
 fn apply_hoffset_and_trim(text: &str, rect: Rect, hoffset: usize) -> String {
  let max_width = rect.width as usize;
  let max_height = rect.height as usize;
@@ -451,26 +513,55 @@ impl RatatuiVariables {
  }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct LineStrings {
+ wrapped: bool,
  cursor: String,
  line_number: String,
  text: String,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+struct LineStringsWrapped {
+ wrapped: bool,
+ cursor: String,
+ line_number: String,
+ text: Vec<String>,
+}
+
 /// manages the visible parts of a line in the pagers
 impl LineStrings {
- fn tabfix(&self) -> Self {
-  LineStrings {
+ fn tabfix(&self, hoffset: usize, safe_area: Rect) -> LineStringsWrapped {
+  let text = tabfix(&self.text);
+
+  let newtext = match self.wrapped {
+   true =>
+   // vec![text.clone(), text], // gqhdbjurhn, TODO : wordwrap
+   {
+    apply_hoffset_and_trim_line3_array(
+     // TODO : the "    " hack is not really good but works for the first part
+     &(String::from("    ") + &self.cursor + &self.line_number),
+     &text,
+     safe_area,
+     hoffset,
+    )
+    .1
+   }
+   false => vec![text],
+  };
+
+  LineStringsWrapped {
+   wrapped: self.wrapped,
    cursor: tabfix(&self.cursor),
    line_number: tabfix(&self.line_number),
-   text: tabfix(&self.text),
+   // text: tabfix(&self.text),
+   text: newtext,
   }
  }
 }
 
 /// manages the visible parts of the text in the pagers
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 struct LineStringsConfig<'a> {
  line_strings: &'a [LineStrings],
  wrapped: bool,
@@ -479,22 +570,40 @@ struct LineStringsConfig<'a> {
  hoffset: usize,
  theme_colors: ThemeColors,
  cursor_color: Option<ratatui::style::Color>,
+ // scroller: Option<RefMut<'a, Scroller>>,
+ // scroller: Option<&'a mut Scroller>,
 }
 
 impl<'a> LineStringsConfig<'a> {
- fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>> {
+ fn prepare2print(&self, safe_area: Rect) -> Vec<Vec<Line<'_>>>
+// fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>>
+ {
   self
    .line_strings
    .iter()
-   .map(|x| {
-    let x = x.tabfix();
+   .map(|ls| {
+    // LineStrings
+    let lsw = ls.tabfix(self.hoffset, safe_area); // LineStringsWrapped
 
-    let res = apply_hoffset_and_trim_line3(
-     &(String::new() + &x.cursor + &x.line_number),
-     &x.text,
-     safe_area,
-     self.hoffset,
-    );
+    let res: Vec<(String, String)> = lsw
+     .text
+     .iter()
+     .map(|x| {
+      apply_hoffset_and_trim_line3(
+       &(String::new() + &lsw.cursor + &lsw.line_number),
+       x,
+       safe_area,
+       self.hoffset,
+      )
+     })
+     .collect::<Vec<_>>();
+
+    // let res = apply_hoffset_and_trim_line3(
+    //  &(String::new() + &lsw.cursor + &lsw.line_number),
+    //  &lsw.text,
+    //  safe_area,
+    //  self.hoffset,
+    // );
 
     let cursor_style = if let Some(color) = self.cursor_color {
      Style::new().fg(color)
@@ -512,11 +621,17 @@ impl<'a> LineStringsConfig<'a> {
     let text_style =
      if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
 
-    Line::from(vec![
-     Span::styled(x.cursor, cursor_style),
-     Span::styled(x.line_number, line_number_style),
-     Span::styled(res.1, text_style),
-    ])
+    res
+     .iter()
+     .map(|res| {
+      let lsw = lsw.clone();
+      Line::from(vec![
+       Span::styled(lsw.cursor, cursor_style),
+       Span::styled(lsw.line_number, line_number_style),
+       Span::styled(res.1.clone(), text_style),
+      ])
+     })
+     .collect::<Vec<_>>()
    })
    .collect::<Vec<_>>()
  }
@@ -605,11 +720,21 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   // trace!( "TwoScreenDefaultWidget all_lines : {}", all_lines);
 
-  let paragraph = Paragraph::new(all_lines).block(block).left_aligned();
+  // let paragraph = Paragraph::new(all_lines).block(block).left_aligned();
+  // let paragraph : Vec<Paragraph> = all_lines
+  //  .iter()
+  //  .map(|all_lines| Paragraph::new(all_lines.clone()).block(block).left_aligned())
+  //  .collect();
+
+  let all_lines_flattened: Vec<Line<'_>> = all_lines.iter().flatten().map(|x| x.clone()).collect();
+  // let all_lines_flattened = all_lines.iter().flatten().collect::<Vec<Line<'_>>>();
+  let paragraph = Paragraph::new(all_lines_flattened)
+   .block(block)
+   .left_aligned();
 
   // weue806j1y
-  let paragraph =
-   if !self.all_lines.wrapped { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
+  // let paragraph =
+  //  if !self.all_lines.wrapped { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
 
   let menu_style =
    if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
@@ -629,11 +754,16 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
    let all_lines2 = self.all_lines2.prepare2print(safe_area);
 
-   let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
+   // let paragraph2 = Paragraph::new(all_lines2).block(block2).left_aligned();
+   let all_lines_flattened2: Vec<Line<'_>> =
+    all_lines2.iter().flatten().map(|x| x.clone()).collect();
+   let paragraph2 = Paragraph::new(all_lines_flattened2)
+    .block(block2)
+    .left_aligned();
 
    // weue806j1y
-   let paragraph2 =
-    if !self.all_lines2.wrapped { paragraph2 } else { paragraph2.wrap(Wrap { trim: false }) };
+   // let paragraph2 =
+   //  if !self.all_lines2.wrapped { paragraph2 } else { paragraph2.wrap(Wrap { trim: false }) };
 
    // Clear.render(safe_area2, buf); // doesn't fix the tab problem
    paragraph2.render(safe_area2, buf);
@@ -791,6 +921,7 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
 
 pub struct TermionScreenFirstPage {
  config: &'static Config,
+ // scroller_main: WrapScroller,
  scroller_main: Scroller,
  // scroller_second: Scroller,
  layout: Layout,
@@ -822,7 +953,8 @@ impl TermionScreenFirstPage {
  pub fn new(config: &'static Config) -> Self {
   Self {
    config,
-   scroller_main: Scroller::new(),
+   // scroller_main: WrapScroller::default(),
+   scroller_main: Scroller::default(),
    // scroller_second: Scroller::new(),
    layout: Layout::new(),
    flipstate: 1,
@@ -914,7 +1046,7 @@ impl TermionScreenFirstPage {
  }
 
  fn get_max_hoffset_main(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
-  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+  if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
@@ -926,13 +1058,13 @@ impl TermionScreenFirstPage {
  }
 
  fn get_max_hoffset_second(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
-  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+  if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
      let cbentry_borrowed = acbe.cbentry.borrow();
      let scroller_second = cbentry_borrowed.get_scroller();
-     if let Some(cursor_second) = scroller_second.get_cursor_in_array() {
+     if let Some(cursor_second) = scroller_second.get_cursor_in_content_array() {
       let lines = cbentry_borrowed.get_text();
       // return lines.iter().map(|l| tabfix(l).width()).max().unwrap_or(0);
       if cursor_second < lines.len() {
@@ -953,7 +1085,7 @@ impl TermionScreenFirstPage {
  }
 
  fn get_current_entry(&self) -> Option<RefMut<'_, CBEntry>> {
-  if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+  if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
    let entries = &self.regex_filtered_cbs_entries;
    if cursor < entries.len() {
     if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
@@ -965,15 +1097,15 @@ impl TermionScreenFirstPage {
   None
  }
 
- fn get_active_scroller<'a>(
-  &'a mut self,
-  cbe: Option<&'a mut CBEntry>,
- ) -> Option<&'a mut Scroller> {
-  match self.active_area {
-   ActiveArea::Main => Some(&mut self.scroller_main),
-   ActiveArea::Second => cbe.map(|x| x.get_scroller_mut()),
-  }
- }
+ // fn get_active_scroller<'a>(
+ //  &'a mut self,
+ //  cbe: Option<&'a mut CBEntry>,
+ // ) -> Option<&'a mut Scroller> {
+ //  match self.active_area {
+ //   ActiveArea::Main => Some(&mut self.scroller_main),
+ //   ActiveArea::Second => cbe.map(|x| x.get_scroller_mut()),
+ //  }
+ // }
 }
 
 impl TermionScreenPainter for TermionScreenFirstPage {
@@ -1034,6 +1166,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     self.scroller_main.set_content_length(entries.len());
 
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
+
     self
      .scroller_main
      .set_windowlength(inner_main_rect.height as usize);
@@ -1060,10 +1193,11 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     {
      if let FilteredCbsEntries::ACE(appended_cbentry) = entry {
       let mut bm = appended_cbentry.cbentry.borrow_mut();
+      let scroller_mut = bm.get_scroller_mut();
       // etzwepgkfl
-      bm.get_scroller_mut().set_hwindowlength(self.second_width);
+      scroller_mut.set_hwindowlength(self.second_width);
       // etzwepgkfl
-      bm.get_scroller_mut().set_windowlength(second_area_height);
+      scroller_mut.set_windowlength(second_area_height);
      }
 
      // if &FilteredCbsEntries::ACE( entry) = entry {
@@ -1071,7 +1205,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      //  bm.
      // }
 
-     let is_cursor = match self.scroller_main.get_cursor() {
+     let is_cursor = match self.scroller_main.get_cursor_in_window() {
       None => false,
       Some(value) => idx == value,
      };
@@ -1119,6 +1253,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         // lines.push((flatline(&s002), flatline(&cbentry_borrowed.as_string().into_owned())));
 
         lines.push(LineStrings {
+         wrapped: false,
          cursor: cursor_star.to_string(),
          line_number: format!(
           " {} {:width$} {} {} : ",
@@ -1135,6 +1270,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       FilteredCbsEntries::Line => {
        //  lines.push((layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"), "".to_string()));
        lines.push(LineStrings {
+        wrapped: false,
         cursor: cursor_star.to_string(),
         line_number: layout
          .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
@@ -1145,6 +1281,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       FilteredCbsEntries::Empty => {
        //  lines.push(("".into(), "".into()));
        lines.push(LineStrings {
+        wrapped: false,
         cursor: cursor_star.to_string(),
         line_number: "".to_string(),
         text: "".to_string(),
@@ -1187,6 +1324,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       |cursor_star, idx, numbers_width, entry| {
        //  (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
        LineStrings {
+        wrapped: self.wrapped,
         cursor: cursor_star.to_string(),
         line_number: format!(" {:width$} : ", idx, width = numbers_width,),
         text: entry.to_string(),
@@ -1196,42 +1334,83 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     };
     // cawxd8rc8j 50%
 
+    // wrap simulation gqhdbjurhn :
+    // let all_lines = all_lines
+    //  .iter()
+    //  .flat_map(|x| vec![(*x).clone(), (*x).clone()])
+    //  .collect::<Vec<LineStrings>>();
+
     let theme_colors = self
      .config
      .color_theme
      .get_colors_with_override(self.config.custom_theme_colors.as_ref());
+
+    let all_lines = LineStringsConfig {
+     line_strings: &all_lines,
+     wrapped: false,
+     title: "entry list",
+     line_count: Some(entries.len()),
+     hoffset: self.scroller_main.get_hoffset(),
+     theme_colors: theme_colors.clone(),
+     cursor_color: if self.active_area == ActiveArea::Second {
+      theme_colors.cursor_inactive
+     } else {
+      None
+     },
+    };
+
+    {
+     let window_wraps = all_lines
+      .prepare2print(rv.pl.get_main_area().clone())
+      .iter()
+      .map(|x| x.len())
+      .collect::<Vec<_>>();
+
+     self.scroller_main.set_wrapped_window_length(&window_wraps);
+    }
+
+    let all_lines2 = LineStringsConfig {
+     line_strings: &all_lines2,
+     wrapped: self.wrapped,
+     title: "selected content",
+     line_count: line_count2,
+     // etzwepgkfl
+     // hoffset: self.scroller_second.get_hoffset(),
+     hoffset: hoffset_second,
+     theme_colors: theme_colors.clone(),
+     cursor_color: if self.active_area == ActiveArea::Main {
+      theme_colors.cursor_inactive
+     } else {
+      None
+     },
+    };
+
+    {
+     let window_wraps = all_lines2
+      .prepare2print(rv.pl.get_main_area().clone())
+      .iter()
+      .map(|x| x.len())
+      .collect::<Vec<_>>();
+
+     let mut bm;
+     let scroller_second = if let Some(selected_cbentry) = selected_cbentry.as_ref() {
+      bm = selected_cbentry.borrow_mut();
+      let sm = bm.get_scroller_mut();
+      Some(sm)
+     } else {
+      None
+     };
+     // let mut bm = selected_cbentry.map( |x| x.borrow_mut());
+     // self.scroller_main.set_wrapped_window_length(&window_wraps);
+     scroller_second.map(|x| x.set_wrapped_window_length(&window_wraps));
+    }
+
     let sw = TwoScreenDefaultWidget {
      helpline: HELP_FIRST_PAGE,
      rv,
      // tsfp: &self,
-     all_lines: LineStringsConfig {
-      line_strings: &all_lines,
-      wrapped: false,
-      title: "entry list",
-      line_count: Some(entries.len()),
-      hoffset: self.scroller_main.get_hoffset(),
-      theme_colors: theme_colors.clone(),
-      cursor_color: if self.active_area == ActiveArea::Second {
-       theme_colors.cursor_inactive
-      } else {
-       None
-      },
-     },
-     all_lines2: LineStringsConfig {
-      line_strings: &all_lines2,
-      wrapped: self.wrapped,
-      title: "selected content",
-      line_count: line_count2,
-      // etzwepgkfl
-      // hoffset: self.scroller_second.get_hoffset(),
-      hoffset: hoffset_second,
-      theme_colors: theme_colors.clone(),
-      cursor_color: if self.active_area == ActiveArea::Main {
-       theme_colors.cursor_inactive
-      } else {
-       None
-      },
-     },
+     all_lines,
+     all_lines2,
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
      regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
@@ -1330,7 +1509,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      self.flipstate_prev();
     }
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
-     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
        cbs.toggle_fixation(&(*acbe).clone());
@@ -1342,7 +1521,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      cbs.toggle_clipboards();
     }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
-     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
        return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenViewPage::new(
@@ -1354,7 +1533,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      }
     }
     MyEvent::Termion(Event::Key(Key::Char('e'))) => {
-     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
       let entries = &self.regex_filtered_cbs_entries;
       // let entry = &entries[cursor];
 
@@ -1383,7 +1562,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
      self.toggle_active_area();
     }
     MyEvent::Termion(Event::Key(Key::Char('d'))) => {
-     if let Some(cursor) = self.scroller_main.get_cursor_in_array() {
+     if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
       let entries = &self.regex_filtered_cbs_entries;
       if entries.is_empty() {
       } else if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
@@ -1596,6 +1775,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
      // format!("{} {:width$} : {}", cursor_star, idx, entry, width = numbers_width,)
      //  (format!("{} {:width$} : ", cursor_star, idx, width = numbers_width,), entry.to_string())
      LineStrings {
+      wrapped: self.wrapped,
       cursor: cursor_star.to_string(),
       line_number: format!(" {:width$} : ", idx, width = numbers_width,),
       text: entry.to_string(),
@@ -1611,20 +1791,42 @@ impl TermionScreenPainter for TermionScreenViewPage {
     .config
     .color_theme
     .get_colors_with_override(self.config.custom_theme_colors.as_ref());
+
+   let all_lines = LineStringsConfig {
+    line_strings: all_lines.as_ref(),
+    wrapped: self.wrapped,
+    title: &self.main_title,
+    line_count: Some(string_lines.len()),
+    hoffset: self.scroller.get_hoffset(),
+    theme_colors: theme_colors.clone(),
+    cursor_color: None,
+   };
+
+   {
+    let window_wraps = all_lines
+     .prepare2print(rv.pl.get_main_area().clone())
+     .iter()
+     .map(|x| x.len())
+     .collect::<Vec<_>>();
+
+    self.scroller.set_wrapped_window_length(&window_wraps);
+   }
+
    let sw = TwoScreenDefaultWidget {
     helpline: HELP_QX,
     rv: &rv,
     // all_lines: R::Old(&all_lines),
     // all_lines: LineStringsConfig::New2(all_lines.as_ref())
-    all_lines: LineStringsConfig {
-     line_strings: all_lines.as_ref(),
-     wrapped: self.wrapped,
-     title: &self.main_title,
-     line_count: Some(string_lines.len()),
-     hoffset: self.scroller.get_hoffset(),
-     theme_colors: theme_colors.clone(),
-     cursor_color: None,
-    },
+    all_lines,
+    // all_lines: LineStringsConfig {
+    //  line_strings: all_lines.as_ref(),
+    //  wrapped: self.wrapped,
+    //  title: &self.main_title,
+    //  line_count: Some(string_lines.len()),
+    //  hoffset: self.scroller.get_hoffset(),
+    //  theme_colors: theme_colors.clone(),
+    //  cursor_color: None,
+    // },
     all_lines2: LineStringsConfig::default(),
     regex_edit_mode: None,
     regex_edit_mode_state: "".to_string(),
