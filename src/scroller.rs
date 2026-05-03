@@ -331,7 +331,7 @@ impl Scroller {
     None
    }
   });
-  
+
   rs.last().unwrap_or(1)
  }
 
@@ -760,24 +760,23 @@ mod tests {
 
  #[test]
  fn test_subscroller_004() {
-  assert_eq!( Scroller::wrapped_window_length( 3, &[]), 1); // ?
-  assert_eq!( Scroller::wrapped_window_length( 3, &[1,1,1]), 3); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[2,2,2]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[3,3,3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[3,3,3,3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[3,3,3,3,3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[3,3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 3, &[4,4,4]), 1); 
+  assert_eq!(Scroller::wrapped_window_length(3, &[]), 1); // ?
+  assert_eq!(Scroller::wrapped_window_length(3, &[1, 1, 1]), 3);
+  assert_eq!(Scroller::wrapped_window_length(3, &[2, 2, 2]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[3, 3, 3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[3, 3, 3, 3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[3, 3, 3, 3, 3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[3, 3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(3, &[4, 4, 4]), 1);
 
-  assert_eq!( Scroller::wrapped_window_length( 5, &[3,3,3,3,3]), 1); 
-  assert_eq!( Scroller::wrapped_window_length( 6, &[3,3,3,3,3]), 2); 
-  assert_eq!( Scroller::wrapped_window_length( 7, &[3,3,3,3,3]), 2); 
-  assert_eq!( Scroller::wrapped_window_length( 8, &[3,3,3,3,3]), 2); 
-  assert_eq!( Scroller::wrapped_window_length( 9, &[3,3,3,3,3]), 3); 
-  assert_eq!( Scroller::wrapped_window_length( 9, &[1,3,5,3,3]), 3); 
-  assert_eq!( Scroller::wrapped_window_length( 9, &[5,3,1,3,3]), 3); 
-
+  assert_eq!(Scroller::wrapped_window_length(5, &[3, 3, 3, 3, 3]), 1);
+  assert_eq!(Scroller::wrapped_window_length(6, &[3, 3, 3, 3, 3]), 2);
+  assert_eq!(Scroller::wrapped_window_length(7, &[3, 3, 3, 3, 3]), 2);
+  assert_eq!(Scroller::wrapped_window_length(8, &[3, 3, 3, 3, 3]), 2);
+  assert_eq!(Scroller::wrapped_window_length(9, &[3, 3, 3, 3, 3]), 3);
+  assert_eq!(Scroller::wrapped_window_length(9, &[1, 3, 5, 3, 3]), 3);
+  assert_eq!(Scroller::wrapped_window_length(9, &[5, 3, 1, 3, 3]), 3);
  }
 }
 

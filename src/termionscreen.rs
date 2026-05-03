@@ -12,9 +12,9 @@ use std::rc::Rc;
 
 use crate::clipboards::AppendedCBEntry;
 use crate::clipboards::{cbentry::CBEntry, AcbeId, CBType};
-use crate::color_theme::ThemeColors;
+use crate::color_theme::{ColorTheme, ThemeColors};
 use crate::config::{self, Config};
-use crate::constants::{HELP_FIRST_PAGE, HELP_QX};
+use crate::constants::{self, HELP_FIRST_PAGE, HELP_WQX};
 use crate::event::MyEvent;
 use crate::layout::Layout;
 use crate::layout_ratatui::{PagerLayout, PagerLayoutBase, PagerLayoutLR, PagerLayoutTB};
@@ -28,7 +28,7 @@ use crate::tools::{flatline, tabfix};
 use enum_iterator::all;
 use mktemp::Temp;
 use ratatui::layout::{Alignment, Margin, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget};
 use ratatui::DefaultTerminal;
@@ -103,13 +103,13 @@ pub(crate) fn wrap_text(text: &str, width: usize) -> Vec<&str> {
  ret
 }
 
-fn render_scroller_lines4<T>(
+fn render_scroller_lines4<'a, T>(
  scroller: &mut Scroller,
  items: &[T],
  wrapped: bool,
  _layout: &Layout,
- formatter: impl Fn(&str, usize, usize, &T) -> LineStrings,
-) -> Vec<LineStrings> {
+ formatter: impl Fn(&str, usize, usize, &T) -> LineStrings<'a>,
+) -> Vec<LineStrings<'a>> {
  let numbers_width = (items.len() as f64).log10().ceil() as usize;
  let mut lines = vec![];
 
@@ -512,40 +512,59 @@ impl RatatuiVariables {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct LineStrings {
- wrapped: bool,
- cursor: String,
- line_number: String,
- text: String,
+enum LineStringsType<'a> {
+ S(String),
+ L(Vec<Line<'a>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct LineStringsWrapped {
+struct LineStrings<'a> {
  wrapped: bool,
  cursor: String,
  line_number: String,
- text: Vec<String>,
+ text: LineStringsType<'a>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum LineStringsWrappedType<'a> {
+ S(Vec<String>),
+ L(Vec<Line<'a>>),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct LineStringsWrapped<'a> {
+ wrapped: bool,
+ cursor: String,
+ line_number: String,
+ text: LineStringsWrappedType<'a>,
 }
 
 /// manages the visible parts of a line in the pagers
-impl LineStrings {
+impl<'a> LineStrings<'a> {
  fn tabfix(&self, hoffset: usize, safe_area: Rect) -> LineStringsWrapped {
-  let text = tabfix(&self.text);
+  let newtext2 = match &self.text {
+   LineStringsType::S(text) => {
+    let text = tabfix(text);
 
-  let newtext = match self.wrapped {
-   true =>
-   // vec![text.clone(), text], // gqhdbjurhn, TODO : wordwrap
-   {
-    apply_hoffset_and_trim_line3_array(
-     // TODO : the "    " hack is not really good but works for the first part
-     &(String::from("    ") + &self.cursor + &self.line_number),
-     &text,
-     safe_area,
-     hoffset,
-    )
-    .1
+    let newtext = match self.wrapped {
+     true =>
+     // vec![text.clone(), text], // gqhdbjurhn, TODO : wordwrap
+     {
+      apply_hoffset_and_trim_line3_array(
+       // TODO : the "    " hack is not really good but works for the first part
+       &(String::from("    ") + &self.cursor + &self.line_number),
+       &text,
+       safe_area,
+       hoffset,
+      )
+      .1
+     }
+     false => vec![text],
+    };
+    LineStringsWrappedType::S(newtext)
    }
-   false => vec![text],
+
+   LineStringsType::L(lines) => LineStringsWrappedType::L(lines.iter().cloned().collect()),
   };
 
   LineStringsWrapped {
@@ -553,7 +572,7 @@ impl LineStrings {
    cursor: tabfix(&self.cursor),
    line_number: tabfix(&self.line_number),
    // text: tabfix(&self.text),
-   text: newtext,
+   text: newtext2,
   }
  }
 }
@@ -561,7 +580,7 @@ impl LineStrings {
 /// manages the visible parts of the text in the pagers
 #[derive(Debug, Default)]
 struct LineStringsConfig<'a> {
- line_strings: &'a [LineStrings],
+ line_strings: &'a [LineStrings<'a>],
  wrapped: bool,
  title: &'a str,
  line_count: Option<usize>,
@@ -576,6 +595,22 @@ impl<'a> LineStringsConfig<'a> {
  fn prepare2print(&self, safe_area: Rect) -> Vec<Vec<Line<'_>>>
 // fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>>
  {
+  let cursor_style = if let Some(color) = self.cursor_color {
+   Style::new().fg(color)
+  } else if let Some(color) = self.theme_colors.cursor {
+   Style::new().fg(color)
+  } else {
+   Style::new()
+  };
+
+  let line_number_style = if let Some(color) = self.theme_colors.line_number {
+   Style::new().fg(color)
+  } else {
+   Style::new()
+  };
+  let text_style =
+   if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
+
   self
    .line_strings
    .iter()
@@ -583,53 +618,51 @@ impl<'a> LineStringsConfig<'a> {
     // LineStrings
     let lsw = ls.tabfix(self.hoffset, safe_area); // LineStringsWrapped
 
-    let res: Vec<(String, String)> = lsw
-     .text
-     .iter()
-     .map(|x| {
-      apply_hoffset_and_trim_line3(
-       &(String::new() + &lsw.cursor + &lsw.line_number),
-       x,
-       safe_area,
-       self.hoffset,
-      )
-     })
-     .collect::<Vec<_>>();
+    match &lsw.text {
+     LineStringsWrappedType::S(items) => {
+      let res = items
+       .iter()
+       .map(|x| {
+        apply_hoffset_and_trim_line3(
+         &(String::new() + &lsw.cursor + &lsw.line_number),
+         x,
+         safe_area,
+         self.hoffset,
+        )
+       })
+       .collect::<Vec<_>>();
 
-    // let res = apply_hoffset_and_trim_line3(
-    //  &(String::new() + &lsw.cursor + &lsw.line_number),
-    //  &lsw.text,
-    //  safe_area,
-    //  self.hoffset,
-    // );
-
-    let cursor_style = if let Some(color) = self.cursor_color {
-     Style::new().fg(color)
-    } else if let Some(color) = self.theme_colors.cursor {
-     Style::new().fg(color)
-    } else {
-     Style::new()
-    };
-
-    let line_number_style = if let Some(color) = self.theme_colors.line_number {
-     Style::new().fg(color)
-    } else {
-     Style::new()
-    };
-    let text_style =
-     if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
-
-    res
-     .iter()
-     .map(|res| {
-      let lsw = lsw.clone();
-      Line::from(vec![
-       Span::styled(lsw.cursor, cursor_style),
-       Span::styled(lsw.line_number, line_number_style),
-       Span::styled(res.1.clone(), text_style),
-      ])
-     })
-     .collect::<Vec<_>>()
+      res
+       .iter()
+       .map(|res| {
+        let lsw = lsw.clone();
+        Line::from(vec![
+         Span::styled(lsw.cursor, cursor_style),
+         Span::styled(lsw.line_number, line_number_style),
+         Span::styled(res.1.clone(), text_style),
+        ])
+       })
+       .collect::<Vec<_>>()
+     }
+     LineStringsWrappedType::L(lines) => {
+      // lines.clone()
+      // assert_eq!( 1, lines.len());
+      lines
+       .iter()
+       .map(|x| {
+        let lsw = lsw.clone();
+        // Line::from( vec![ Span::styled(lsw.cursor, cursor_style), Span::styled(lsw.line_number, line_number_style)])]
+        let mut vec_of_spans = vec![
+         Span::styled(lsw.cursor, cursor_style),
+         Span::styled(lsw.line_number, line_number_style),
+        ];
+        x.iter().for_each(|y| vec_of_spans.push(y.clone()));
+        Line::default().spans(vec_of_spans)
+       })
+       .collect::<Vec<_>>()
+      // vec![Line::from( vec![ Span::styled(lsw.cursor, cursor_style), Span::styled(lsw.line_number, line_number_style)])]
+     }
+    }
    })
    .collect::<Vec<_>>()
  }
@@ -913,6 +946,310 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
 
  fn is_sticky_dialog(&self) -> bool {
   true
+ }
+}
+
+pub struct TermionScreenMenu {
+ config: &'static Config,
+ scroller: Scroller,
+ items: Vec<&'static str>,
+}
+
+impl TermionScreenMenu {
+ pub fn new(config: &'static Config) -> Self {
+  Self {
+   config,
+   scroller: Scroller::new(),
+   items: vec!["Color Theme"],
+  }
+ }
+}
+
+impl TermionScreenPainter for TermionScreenMenu {
+ fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
+  let scroller = &mut self.scroller;
+
+  let rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
+
+  {
+   let inner_main_rect = rv.pl.get_main_area().inner(Margin::new(1, 1));
+
+   scroller.set_content_length(self.items.len());
+   scroller.set_windowlength(inner_main_rect.height as usize);
+
+   let all_lines = render_scroller_lines4(
+    scroller,
+    &self.items,
+    false,
+    &Layout::new(),
+    |cursor_star, _idx, _numbers_width, entry| LineStrings {
+     wrapped: false,
+     cursor: cursor_star.to_string(),
+     line_number: " ".to_string(),
+     text: LineStringsType::S(entry.to_string()),
+    },
+   );
+
+   let theme_colors = self
+    .config
+    .color_theme
+    .read()
+    .unwrap()
+    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+
+   let all_lines = LineStringsConfig {
+    line_strings: all_lines.as_ref(),
+    wrapped: false,
+    title: "Menu",
+    line_count: Some(self.items.len()),
+    hoffset: 0,
+    theme_colors: theme_colors.clone(),
+    cursor_color: None,
+   };
+
+   {
+    let window_wraps = all_lines
+     .prepare2print(*rv.pl.get_main_area())
+     .iter()
+     .map(|x| x.len())
+     .collect::<Vec<_>>();
+
+    self.scroller.set_wrapped_window_length(&window_wraps);
+   }
+
+   let sw = TwoScreenDefaultWidget {
+    helpline: constants::HELP_QXE,
+    rv: &rv,
+    all_lines,
+    all_lines2: LineStringsConfig::default(),
+    regex_edit_mode: None,
+    regex_edit_mode_state: "".to_string(),
+    regex_count: 0,
+    delete_confirm_mode: None,
+    statusline_heap: assd.statusline_heap.clone(),
+    paused: false,
+    active_area: ActiveArea::Main,
+    theme_colors: theme_colors.clone(),
+   };
+
+   terminal
+    .draw(|frame| frame.render_widget(sw, frame.area()))
+    .unwrap();
+  }
+ }
+
+ fn handle_event(&mut self, evt: &MyEvent, _assd: &mut AppStateReceiverData) -> NextTsp {
+  match evt {
+   MyEvent::Termion(Event::Key(Key::Char('\n'))) => {
+    if let Some(cursor) = self.scroller.get_cursor_in_content_array() {
+     if cursor < self.items.len() && self.items[cursor] == "Color Theme" {
+      return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenColorThemeChooser::new(
+       self.config,
+      ))));
+     }
+    }
+   }
+   _ => {
+    Pager::handle_event(&mut self.scroller, evt);
+   }
+  }
+  NextTsp::NoNextTsp
+ }
+}
+
+pub struct TermionScreenColorThemeChooser {
+ config: &'static Config,
+ scroller: Scroller,
+ themes: Vec<(String, ColorTheme)>,
+ has_custom_theme: bool,
+}
+
+impl TermionScreenColorThemeChooser {
+ pub fn new(config: &'static Config) -> Self {
+  let themes: Vec<(String, ColorTheme)> = ColorTheme::all_themes()
+   .iter()
+   .map(|(name, theme)| (name.to_string(), *theme))
+   .collect();
+  let has_custom_theme = config.custom_theme_colors.read().unwrap().is_some();
+  Self {
+   config,
+   scroller: Scroller::new(),
+   themes,
+   has_custom_theme,
+  }
+ }
+
+ fn total_entries(&self) -> usize {
+  if self.has_custom_theme {
+   self.themes.len() + 1
+  } else {
+   self.themes.len()
+  }
+ }
+}
+
+impl TermionScreenPainter for TermionScreenColorThemeChooser {
+ fn paint(&mut self, terminal: &mut DefaultTerminal, assd: &mut AppStateReceiverData) {
+  let rv = RatatuiVariables::new::<PagerLayoutBase>(terminal);
+
+  {
+   let inner_main_rect = rv.pl.get_main_area().inner(Margin::new(1, 1));
+
+   let total = self.total_entries();
+   self.scroller.set_content_length(total);
+   self
+    .scroller
+    .set_windowlength(inner_main_rect.height as usize);
+
+   let theme_colors = self
+    .config
+    .color_theme
+    .read()
+    .unwrap()
+    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+
+   let cursor_in_window = self.scroller.get_cursor_in_window();
+   let window_position = self.scroller.get_windowposition();
+
+   let themes_count = self.themes.len();
+   let has_custom = self.has_custom_theme;
+
+   let mut lines: Vec<LineStrings> = Vec::new();
+
+   for idx in 0..total {
+    let is_cursor = match cursor_in_window {
+     None => false,
+     Some(value) => idx == window_position + value,
+    };
+    let cursor_star = if is_cursor { ">" } else { " " };
+
+    let name = if has_custom && idx == themes_count {
+     "custom".to_string()
+    } else if idx < themes_count {
+     self.themes[idx].0.clone()
+    } else {
+     continue;
+    };
+
+    let tc = if has_custom && idx == themes_count {
+     self
+      .config
+      .custom_theme_colors
+      .read()
+      .unwrap()
+      .clone()
+      .unwrap_or_default()
+    } else if idx < themes_count {
+     self.themes[idx].1.get_colors()
+    } else {
+     ThemeColors::default()
+    };
+    let swatch = |c: Option<Color>| -> Span {
+     match c {
+      Some(c) => Span {
+       style: Style::new().bg(c).fg(c),
+       content: "██".into(),
+      }, // "██" .bg(c).fg(c),
+      None => Span {
+       style: Style::new(),
+       content: "░░".into(),
+      },
+     }
+    };
+    let swatches = vec![
+     Span {
+      style: Style::new(),
+      content: format!(" {}", name).into(),
+     },
+     swatch(tc.window_bg),
+     swatch(tc.window_fg),
+     swatch(tc.cursor),
+     swatch(tc.border),
+     swatch(tc.menu),
+    ];
+
+    lines.push(LineStrings {
+     wrapped: false,
+     cursor: cursor_star.to_string(),
+     line_number: "".to_string(),
+     //  text: format!("{}   {}", name, swatches),
+     text: LineStringsType::L(vec![Line::default().spans(swatches)]),
+    });
+   }
+
+   let all_lines = LineStringsConfig {
+    line_strings: &lines,
+    wrapped: false,
+    title: "Color Theme",
+    line_count: Some(total),
+    hoffset: 0,
+    theme_colors: theme_colors.clone(),
+    cursor_color: None,
+   };
+
+   {
+    let window_wraps = all_lines
+     .prepare2print(*rv.pl.get_main_area())
+     .iter()
+     .map(|x| x.len())
+     .collect::<Vec<_>>();
+
+    self.scroller.set_wrapped_window_length(&window_wraps);
+   }
+
+   let sw = TwoScreenDefaultWidget {
+    helpline: constants::HELP_QXE,
+    rv: &rv,
+    all_lines,
+    all_lines2: LineStringsConfig::default(),
+    regex_edit_mode: None,
+    regex_edit_mode_state: "".to_string(),
+    regex_count: 0,
+    delete_confirm_mode: None,
+    statusline_heap: assd.statusline_heap.clone(),
+    paused: false,
+    active_area: ActiveArea::Main,
+    theme_colors: theme_colors.clone(),
+   };
+
+   terminal
+    .draw(|frame| frame.render_widget(sw, frame.area()))
+    .unwrap();
+  }
+ }
+
+ fn handle_event(&mut self, evt: &MyEvent, assd: &mut AppStateReceiverData) -> NextTsp {
+  match evt {
+   MyEvent::Termion(Event::Key(Key::Char('\n'))) => {
+    if let Some(cursor) = self.scroller.get_cursor_in_content_array() {
+     if cursor < self.themes.len() {
+      let theme_name = self.themes[cursor].0.clone();
+      let theme = self.themes[cursor].1;
+      let mut color_theme = self.config.color_theme.write().unwrap();
+      *color_theme = theme;
+      drop(color_theme);
+      let mut custom = self.config.custom_theme_colors.write().unwrap();
+      *custom = None;
+      drop(custom);
+      assd
+       .statusline_heap
+       .push(StatusSeverity::Info, format!("Theme changed to {}", theme_name));
+     } else if self.has_custom_theme && cursor == self.themes.len() {
+      let mut color_theme = self.config.color_theme.write().unwrap();
+      *color_theme = ColorTheme::Default;
+      drop(color_theme);
+      assd
+       .statusline_heap
+       .push(StatusSeverity::Info, "Theme changed to custom".to_string());
+     }
+     return NextTsp::NoNextTsp;
+    }
+   }
+   _ => {
+    Pager::handle_event(&mut self.scroller, evt);
+   }
+  }
+  NextTsp::NoNextTsp
  }
 }
 
@@ -1260,7 +1597,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
           cbentry_borrowed.get_date_time(),
           width = numbers_width,
          ),
-         text: flatline(&cbentry_borrowed.as_string()),
+         text: LineStringsType::S(flatline(&cbentry_borrowed.as_string())),
         });
        }
       }
@@ -1272,7 +1609,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         line_number: layout
          .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
          .to_string(),
-        text: "".to_string(),
+        text: LineStringsType::S("".to_string()),
        });
       }
       FilteredCbsEntries::Empty => {
@@ -1281,7 +1618,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         wrapped: false,
         cursor: cursor_star.to_string(),
         line_number: "".to_string(),
-        text: "".to_string(),
+        text: LineStringsType::S("".to_string()),
        });
       }
      }
@@ -1324,7 +1661,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         wrapped: self.wrapped,
         cursor: cursor_star.to_string(),
         line_number: format!(" {:width$} : ", idx, width = numbers_width,),
-        text: entry.to_string(),
+        text: LineStringsType::S(entry.to_string()),
        }
       },
      )
@@ -1340,7 +1677,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     let theme_colors = self
      .config
      .color_theme
-     .get_colors_with_override(self.config.custom_theme_colors.as_ref());
+     .read()
+     .unwrap()
+     .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
 
     let all_lines = LineStringsConfig {
      line_strings: &all_lines,
@@ -1500,6 +1839,9 @@ impl TermionScreenPainter for TermionScreenFirstPage {
       "help".to_string(),
       CBEntry::new(config::USAGE.to_string().as_bytes()),
      ))));
+    }
+    MyEvent::Termion(Event::Key(Key::Char('m'))) => {
+     return NextTsp::Stack(Rc::new(RefCell::new(TermionScreenMenu::new(self.config))));
     }
     MyEvent::Termion(Event::Key(Key::Char('f'))) => {
      self.flipstate_next();
@@ -1777,7 +2119,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
       wrapped: self.wrapped,
       cursor: cursor_star.to_string(),
       line_number: format!(" {:width$} : ", idx, width = numbers_width,),
-      text: entry.to_string(),
+      text: LineStringsType::S(entry.to_string()),
      }
     },
    );
@@ -1789,7 +2131,9 @@ impl TermionScreenPainter for TermionScreenViewPage {
    let theme_colors = self
     .config
     .color_theme
-    .get_colors_with_override(self.config.custom_theme_colors.as_ref());
+    .read()
+    .unwrap()
+    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
 
    let all_lines = LineStringsConfig {
     line_strings: all_lines.as_ref(),
@@ -1812,7 +2156,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
    }
 
    let sw = TwoScreenDefaultWidget {
-    helpline: HELP_QX,
+    helpline: HELP_WQX,
     rv: &rv,
     // all_lines: R::Old(&all_lines),
     // all_lines: LineStringsConfig::New2(all_lines.as_ref())

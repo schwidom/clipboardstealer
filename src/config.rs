@@ -155,8 +155,8 @@ pub struct Config {
  pub append_ndjson_string: Option<String>,
  pub load_ndjson_string: Vec<String>,
  pub editor: bool,
- pub color_theme: crate::color_theme::ColorTheme,
- pub custom_theme_colors: Option<crate::color_theme::ThemeColors>,
+ pub color_theme: RwLock<crate::color_theme::ColorTheme>,
+ pub custom_theme_colors: RwLock<Option<crate::color_theme::ThemeColors>>,
  pub suspend_threads: RwLock<()>,
  pub suspended_threads: AtomicBool,
  pub paused: Paused,
@@ -215,8 +215,8 @@ impl Config {
    append_ndjson_string,
    load_ndjson_string,
    editor: args.editor,
-   color_theme: args.color_theme,
-   custom_theme_colors,
+   color_theme: RwLock::new(args.color_theme),
+   custom_theme_colors: RwLock::new(custom_theme_colors),
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
    paused: Paused::new(args.paused),
@@ -236,7 +236,7 @@ impl Config {
  }
 
  pub fn save_theme_to_file(&self, path: &str) -> Result<(), String> {
-  let json = self.color_theme.to_json();
+  let json = self.color_theme.read().unwrap().to_json();
   std::fs::write(path, json).map_err(|e| format!("Failed to write theme file: {}", e))
  }
 
