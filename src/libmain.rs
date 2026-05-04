@@ -51,6 +51,7 @@ use crossbeam_skiplist::SkipMap;
 
 use crate::{
  clipboards::*,
+ color_theme::ThemeColors,
  config::{sleep_default, Config, Paused},
  constants::{DISPLAY, EDITOR},
  debug::*,
@@ -101,7 +102,7 @@ use crate::clipboards::{CBType, ClipboardFixation, ClipboardReaderWriter};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
-pub struct Args {
+pub(crate) struct Args {
  #[arg(long, help = "appends clipboard information to file")]
  pub(crate) append_ndjson_bin: Option<String>,
  #[arg(long, help = "reads clipboard information from file")]
@@ -136,8 +137,15 @@ pub struct Args {
  pub(crate) convert_string_ndjson: Option<String>,
  #[arg(long, help = "output file for converted string ndjson")]
  pub(crate) to_bin_ndjson: Option<String>,
- #[arg(short, long, default_value_t = crate::color_theme::ColorTheme::default(), help = "select color theme (default, nord, solarized, dracula)")]
- pub(crate) color_theme: crate::color_theme::ColorTheme,
+ // #[arg(short, long, default_value_t = crate::color_theme::ColorTheme::default(), help = "select color theme (default, nord, solarized, dracula)")]
+ // pub(crate) color_theme: crate::color_theme::ColorTheme,
+ #[arg(
+  short,
+  long,
+  default_value_t = crate::color_theme::default_color_theme_name(),
+  help = "select color theme (default, nord, solarized, dracula, ...)"
+ )]
+ pub(crate) color_theme: String,
  #[arg(long, default_value_t = false, help = "list available color themes")]
  pub(crate) color_themes: bool,
  #[arg(long, help = "load color theme from JSON file")]
@@ -180,7 +188,7 @@ impl From<ConnError> for CbsError {
  }
 }
 
-pub struct TicksThread {}
+pub(crate) struct TicksThread {}
 
 impl TicksThread {
  fn new() -> Self {
@@ -205,7 +213,7 @@ impl TicksThread {
 }
 
 /** waits for clipboard events and handles them */
-pub struct ClipboardThread {
+pub(crate) struct ClipboardThread {
  cbtype: CBType,
  echofree: Arc<Mutex<HashSet<Vec<u8>>>>,
 }
@@ -404,7 +412,7 @@ impl TermionLoop {
 struct MySignalsLoop {}
 
 impl MySignalsLoop {
- pub fn new() -> Self {
+ pub(crate) fn new() -> Self {
   Self {}
  }
 
@@ -535,34 +543,35 @@ impl<'a> AppStateSender<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum StatusSeverity {
- Info = 0,
- Warning = 1,
- Error = 2,
+pub(crate) enum StatusSeverity {
+ InfoShort = 0,
+ Info = 1,
+ Warning = 2,
+ Error = 3,
 }
 
 #[derive(Clone, Debug)]
-pub struct StatusMessage {
- pub severity: StatusSeverity,
- pub time: MyTime,
- pub seqnr: usize,
- pub text: String,
+pub(crate) struct StatusMessage {
+ pub(crate) severity: StatusSeverity,
+ pub(crate) time: MyTime,
+ pub(crate) seqnr: usize,
+ pub(crate) text: String,
 }
 
 #[derive(Default)]
-pub struct StatusSeqGenerator(AtomicUsize);
+pub(crate) struct StatusSeqGenerator(AtomicUsize);
 
 impl StatusSeqGenerator {
- pub fn next(&self) -> usize {
+ pub(crate) fn next(&self) -> usize {
   self.0.fetch_add(1, Ordering::Relaxed)
  }
 }
 
 #[derive(Clone, Debug)]
-pub struct StatusKey {
- pub severity: StatusSeverity,
- pub time: MyTime,
- pub seqnr: usize,
+pub(crate) struct StatusKey {
+ pub(crate) severity: StatusSeverity,
+ pub(crate) time: MyTime,
+ pub(crate) seqnr: usize,
 }
 
 impl Ord for StatusKey {
@@ -589,7 +598,7 @@ impl PartialEq for StatusKey {
  }
 }
 
-pub struct StatusLineHeap {
+pub(crate) struct StatusLineHeap {
  map: Arc<SkipMap<StatusKey, StatusMessage>>,
  seq_gen: Arc<StatusSeqGenerator>,
 }
@@ -601,18 +610,18 @@ impl Default for StatusLineHeap {
 }
 
 impl StatusLineHeap {
- pub fn new() -> Self {
+ pub(crate) fn new() -> Self {
   Self {
    map: Arc::new(SkipMap::new()),
    seq_gen: Arc::new(StatusSeqGenerator::default()),
   }
  }
 
- pub fn default() -> Self {
+ pub(crate) fn default() -> Self {
   Self::new()
  }
 
- pub fn push(&self, severity: StatusSeverity, text: String) {
+ pub(crate) fn push(&self, severity: StatusSeverity, text: String) {
   let time = MyTime::now();
   let seqnr = self.seq_gen.next();
   let key = StatusKey {
@@ -620,6 +629,22 @@ impl StatusLineHeap {
    time: time.clone(),
    seqnr,
   };
+
+  if severity == StatusSeverity::InfoShort {
+   loop {
+    match self.map.front() {
+     Some(some) => {
+      if some.key().severity == StatusSeverity::InfoShort {
+       some.remove();
+      } else {
+       break;
+      }
+     }
+     None => break,
+    }
+   }
+  }
+
   let _entry = self.map.insert(
    key,
    StatusMessage {
@@ -631,19 +656,19 @@ impl StatusLineHeap {
   );
  }
 
- pub fn pop(&self) -> Option<StatusMessage> {
+ pub(crate) fn pop(&self) -> Option<StatusMessage> {
   (*self.map).pop_front().map(|entry| entry.value().clone())
  }
 
- pub fn peek(&self) -> Option<StatusMessage> {
+ pub(crate) fn peek(&self) -> Option<StatusMessage> {
   (*self.map).front().map(|node| node.value().clone())
  }
 
- pub fn len(&self) -> usize {
+ pub(crate) fn len(&self) -> usize {
   self.map.len()
  }
 
- pub fn is_empty(&self) -> bool {
+ pub(crate) fn is_empty(&self) -> bool {
   self.map.is_empty()
  }
 }
@@ -657,14 +682,14 @@ impl Clone for StatusLineHeap {
  }
 }
 
-pub struct AppStateReceiverData {
- pub cbs: Clipboards,
- pub statusline_heap: StatusLineHeap,
- pub sender: Sender<MyEvent>,
+pub(crate) struct AppStateReceiverData {
+ pub(crate) cbs: Clipboards,
+ pub(crate) statusline_heap: StatusLineHeap,
+ pub(crate) sender: Sender<MyEvent>,
 }
 
 impl AppStateReceiverData {
- pub fn new(config: &'static Config, sender: Sender<MyEvent>) -> Self {
+ pub(crate) fn new(config: &'static Config, sender: Sender<MyEvent>) -> Self {
   let mut cbs = Clipboards::new();
   let statusline_heap = StatusLineHeap::new();
   for load_ndjson in &config.load_ndjson_bin {
@@ -722,7 +747,7 @@ impl AppStateReceiverData {
  }
 }
 
-pub struct AppStateReceiver<'a> {
+pub(crate) struct AppStateReceiver<'a> {
  running: &'a AtomicBool,
  paused: &'a Paused,
  receiver: Receiver<MyEvent>,
@@ -1039,19 +1064,10 @@ pub fn main() {
   }
  }
 
- // Handle --color-themes early exit
- if args.color_themes {
-  println!("Available color themes:");
-  for (name, _theme) in crate::color_theme::ColorTheme::all_themes() {
-   println!("  {}", name);
-  }
-  return;
- }
-
  // Handle --load-color-theme - load theme from JSON and use it
  let custom_theme_colors = if let Some(path) = &args.load_color_theme {
   match std::fs::read_to_string(path) {
-   Ok(content) => match crate::color_theme::ColorTheme::from_json(&content) {
+   Ok(content) => match ThemeColors::from_json(&content) {
     Ok(theme_colors) => {
      println!("Loaded theme from {}", path);
      Some(theme_colors)
@@ -1069,17 +1085,6 @@ pub fn main() {
  } else {
   None
  };
-
- // Handle --save-color-theme early exit (just save and exit)
- if let Some(path) = &args.save_color_theme {
-  let json = args.color_theme.to_json();
-  if let Err(e) = std::fs::write(path, &json) {
-   eprintln!("Error saving theme file: {}", e);
-   std::process::exit(1);
-  }
-  println!("Saved theme to {}", path);
-  return;
- }
 
  {
   // warnings
@@ -1150,7 +1155,43 @@ pub fn main() {
   return;
  }
 
- let config = Box::leak(Box::new(Config::from_args(&args, custom_theme_colors)));
+ let config = Box::leak(Box::new(Config::from_args(&args)));
+
+ {
+  let mut color_theme = args.color_theme.clone();
+
+  if let Some(value) = custom_theme_colors {
+   let custom_color_name = String::from("custom");
+   config
+    .all_color_themes
+    .insert(custom_color_name.clone(), value.clone());
+   color_theme = custom_color_name;
+  }
+
+  if let Some(tc) = config.all_color_themes.get(&color_theme) {
+   config.color_theme.set(tc.value().clone());
+  }
+ }
+
+ // Handle --save-color-theme early exit (just save and exit)
+ if let Some(path) = &args.save_color_theme {
+  let json = config.color_theme.get_or_default().to_json();
+  if let Err(e) = std::fs::write(path, &json) {
+   eprintln!("Error saving theme file: {}", e);
+   std::process::exit(1);
+  }
+  println!("Saved theme to {}", path);
+  return;
+ }
+
+ // Handle --color-themes early exit
+ if args.color_themes {
+  println!("Available color themes:");
+  for entry in &config.all_color_themes {
+   println!("  {}", entry.key());
+  }
+  return;
+ }
 
  // let appstate = AppState::new();
  // let appstate = Box::leak(Box::new(AppState::new(config)));

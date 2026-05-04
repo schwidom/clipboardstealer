@@ -16,7 +16,7 @@ use x11::Atom;
 
 /** termion or signal_hook events provided by TermionLoop or MySignalsLoop */
 #[derive(Clone, Debug, PartialEq)]
-pub enum MyEvent {
+pub(crate) enum MyEvent {
  Termion(Event),
  SignalHook(c_int),  // signal_hook didn't wrap that
  MouseButton1(bool), // pressed (true) / released (false)
@@ -32,7 +32,7 @@ pub enum MyEvent {
 }
 
 impl MyEvent {
- pub fn is_stop_event(&self) -> bool {
+ pub(crate) fn is_stop_event(&self) -> bool {
   match self {
    // TODO : yes/no dialog
    MyEvent::Termion(tev) if tev == &Event::Key(Key::Char('x')) => true,

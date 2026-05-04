@@ -5,10 +5,10 @@ use crate::{
  scroller::{CursorRepetitions, Scroller},
 };
 
-pub struct Pager;
+pub(crate) struct Pager;
 
 impl Pager {
- pub fn handle_event(scroller: &mut Scroller, evt: &MyEvent) {
+ pub(crate) fn handle_event(scroller: &mut Scroller, evt: &MyEvent) {
   match evt {
    MyEvent::Termion(Event::Key(Key::Up)) => {
     scroller.cursor_decrease();

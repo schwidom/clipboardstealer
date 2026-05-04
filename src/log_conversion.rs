@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Write};
 
 use crate::clipboards::cbentry::{CBEntry, CBEntryString};
 
-pub fn convert_bin_to_string(input_path: &str, output_path: &str) -> Result<(), String> {
+pub(crate) fn convert_bin_to_string(input_path: &str, output_path: &str) -> Result<(), String> {
  let input_file = File::open(input_path)
   .map_err(|e| format!("Failed to open input file '{}': {}", input_path, e))?;
  let mut output_file = OpenOptions::new()
@@ -31,7 +31,7 @@ pub fn convert_bin_to_string(input_path: &str, output_path: &str) -> Result<(), 
  Ok(())
 }
 
-pub fn convert_string_to_bin(input_path: &str, output_path: &str) -> Result<(), String> {
+pub(crate) fn convert_string_to_bin(input_path: &str, output_path: &str) -> Result<(), String> {
  let input_file = File::open(input_path)
   .map_err(|e| format!("Failed to open input file '{}': {}", input_path, e))?;
  let mut output_file = OpenOptions::new()
@@ -59,7 +59,7 @@ pub fn convert_string_to_bin(input_path: &str, output_path: &str) -> Result<(), 
  Ok(())
 }
 
-pub fn copy_bin(input_path: &str, output_path: &str) -> Result<(), String> {
+pub(crate) fn copy_bin(input_path: &str, output_path: &str) -> Result<(), String> {
  let input_file = File::open(input_path)
   .map_err(|e| format!("Failed to open input file '{}': {}", input_path, e))?;
  let mut output_file = OpenOptions::new()
@@ -84,7 +84,7 @@ pub fn copy_bin(input_path: &str, output_path: &str) -> Result<(), String> {
  Ok(())
 }
 
-pub fn copy_string(input_path: &str, output_path: &str) -> Result<(), String> {
+pub(crate) fn copy_string(input_path: &str, output_path: &str) -> Result<(), String> {
  let input_file = File::open(input_path)
   .map_err(|e| format!("Failed to open input file '{}': {}", input_path, e))?;
  let mut output_file = OpenOptions::new()

@@ -4,7 +4,7 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Scroller {
+pub(crate) struct Scroller {
  /// can be freely defined
  windowlength: usize, // NOTE: u16 would be enough but lesser casting operations
 
@@ -32,7 +32,7 @@ impl Default for Scroller {
 }
 
 impl Scroller {
- pub fn new() -> Self {
+ pub(crate) fn new() -> Self {
   Self {
    windowlength: 0,
    windowposition: 0,
@@ -121,7 +121,7 @@ impl Scroller {
   }
  }
 
- pub fn cursor_home(&mut self) {
+ pub(crate) fn cursor_home(&mut self) {
   if self.windowlength == 0 {
    self.cursor = None;
   } else if self.contentlength == 0 {
@@ -132,7 +132,7 @@ impl Scroller {
   self.windowposition = 0;
  }
 
- pub fn cursor_end(&mut self) {
+ pub(crate) fn cursor_end(&mut self) {
   if self.windowlength == 0 {
    self.cursor = None;
   } else if self.contentlength == 0 {
@@ -340,7 +340,7 @@ impl Scroller {
   self.set_windowlength(nwl);
  }
 }
-pub enum CursorRepetitions {
+pub(crate) enum CursorRepetitions {
  WindowLength,
  Count(usize),
 }
@@ -668,16 +668,6 @@ mod tests {
   assert_eq!(ws.get_cursor_in_content_array(), None);
   assert_eq!(ws.get_windowposition(), 0);
 
-  // Situation und Fall:
-  // Die 4 Zeilen sind gewrappt, somit ist content_length die Anzahl der gewrappten Zeilen
-  // (nicht die Gesamtzahl der Zeilen in gewrappter Form)
-  // Ein WrapperScroller kennt dann die gewrappte Länge einer Zeile und die Position des Cursors innerhalb der Zeile (Line Cursor).
-  // Das wäre dann der zweite Cursor.
-  // Somit könnte statt des Scrollers ein Interface im Termionscreen bzw in den CBEntry s gespeichert  werden,
-  // (oder als ENUM) welches auf entweder den Scroller zeigt oder auf den WrapperScroller, der dann einen Scroller enthält
-  // und das sichtbare Fenster neu berechnet
-  // Im Prinzip muss es gar nicht so kompliziert sein, wenn man einfach statt dem Scroller dann den WrapperScroller
-  // mit 1 Zeile pro Zeile nimmt, ist das auch ok
  }
 
  #[test]
@@ -693,47 +683,7 @@ mod tests {
   assert_eq!(s.get_cursor_in_content_array(), None);
   assert_eq!(s.get_windowposition(), 0);
 
-  // Der Einfachheit halber nehmen wir an, dass jede Zeile zu 2 Zeilen gewrappt wird. (später auch komplizierter)
-  // Folglich ist das Window jetzt 2x grösser, als der Zeichenbereich.
-
-  // Somit brauche ich einen Subscroller, der über die Länge des gewrappten Windows geht.
-
-  // let mut ss = Scroller::default();
-  // ss.set_content_length(4); // doppelte Windowlänge des Scrollers s
-  // ss.set_windowlength(2); // Zeichenbereich
-  // assert_eq!(s.get_cursor_in_window(), None);
-  // assert_eq!(s.get_cursor_in_array(), None);
-  // assert_eq!(s.get_windowposition(), 0);
-
-  // Was muss jetzt passieren: Wenn der Scroller s bedient wird,
-  // muss der Subscroller jedesmal neu angelegt werden.
-  // Die Frage ist dann, was mit dem Cursor des Subscrollers passiert.
-  // Wenn der Subscroller bedient wird, muss auf ein überschreiten der Grenzen geprüft werden.
-  // Vieleicht wird der Subscroller auch nicht auf das Gesamte gewrappte Window sondern nur eine gewrappte
-  // Zeile angewendet.
-
-  // Zuallererst muss ohnehin die Anpassung auf den Zeichenbereich erfolgen.
-  // d.h. wir verwenden den Subscroller ss erstmal nicht, sondern nur den Scroller s.
-  // Wir müssen ein neues Offset für das Window anhand der Cursorposition berechnen.
-
-  // Wir müssen den Scroll-impuls, der normalerweise am Ende des Fensters definiert ist,
-  // vorverlegen anhand der Liste der Wrap Längen, die im aktuellen Fenster gelten.
-  // Der essentielle Code dazu ist zu finden in cursor_increase und cursor_decrease.
-
-  // Am Ende des Contents muss der Start des Windows mehr Richtung Ende gesetzt werden,
-  // damit die restlichen Zeilen sichtbar werden.
-
-  // ggf. reicht auch einfach eine Manipulation von set_content_length und set_windowlength
-  // mit dem Test in gqhdbjurhn reicht offensichtlich ein Neusetzen von set_windowlength aus
-  // Wir testen also erstmal, ob die Änderung per set_windowlength schon ausreicht.
-
-  // Die Content Length ist aktuell 5, die default Windowlength ist 3
-  // Gegeben seien die Wrap Lengths pro Zeile: 1, 2, 2, 1, 2
   let content_wraps = [1, 2, 2, 1, 2];
-  // Der Windowbereich liefert also am Anfang 3 ungewrappte Zeilen
-  // Dann stellt man fest, nach dem Wrappen passen nur die ersten 2 in den Zeichenbereich.
-  // also setzt man set_windowlength auf 2
-  // dann wandert man mit dem cursor los : cursor_increase
 
   // panic!("ox: {:?}", new_window_length()); // 3
 

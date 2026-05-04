@@ -1,3 +1,4 @@
+use crossbeam_skiplist::{map::Entry, SkipMap};
 use lazy_static::lazy_static;
 use std::{
  sync::{
@@ -12,7 +13,7 @@ use version::version;
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(30);
 
 lazy_static! {
- pub static ref USAGE: String = format!(
+ pub(crate) static ref USAGE: String = format!(
   r"
 clipboardstealer version {}
 
@@ -120,14 +121,14 @@ This software is licensed under the terms of the Apache-2.0 license.
  );
 }
 
-pub fn sleep_default() {
+pub(crate) fn sleep_default() {
  // dbaphuses4, a0vbfusiba
  thread::sleep(DEFAULT_TIMEOUT);
 }
 
 #[derive(Default, Debug)]
 pub(crate) struct Paused {
- pub paused: AtomicBool,
+ pub(crate) paused: AtomicBool,
 }
 
 impl Paused {
@@ -145,34 +146,85 @@ impl Paused {
  }
 }
 
-// #[derive(Clone)]
 #[derive(Debug, Default)]
-pub struct Config {
- pub debug: bool,
- pub debugfile: Option<String>,
- pub append_ndjson_bin: Option<String>,
- pub load_ndjson_bin: Vec<String>,
- pub append_ndjson_string: Option<String>,
- pub load_ndjson_string: Vec<String>,
- pub editor: bool,
- pub color_theme: RwLock<crate::color_theme::ColorTheme>,
- pub custom_theme_colors: RwLock<Option<crate::color_theme::ThemeColors>>,
- pub suspend_threads: RwLock<()>,
- pub suspended_threads: AtomicBool,
- pub paused: Paused,
+pub(crate) struct CurrentColorTheme {
+ ct: SkipMap<usize, ThemeColors>,
 }
 
-use crate::libmain::Args;
+impl CurrentColorTheme {
+ fn new(color_theme: ThemeColors) -> Self {
+  let ret = Self::default();
+  ret.set(color_theme);
+  ret
+ }
+
+ fn from_option(custom_theme_colors: Option<ThemeColors>) -> Self {
+  let ret = Self::default();
+  if let Some(tc) = custom_theme_colors {
+   ret.set(tc);
+  }
+  ret
+ }
+
+ pub(crate) fn set(&self, ct: ThemeColors) {
+  let newkey = match self.ct.back() {
+   Some(entry) => entry.key() + 1,
+   None => 0,
+  };
+
+  self.ct.insert(newkey, ct);
+
+  // this is only then atomic and deterministic when it is the only place where deletions are made
+  while self.ct.len() > 1 {
+   self.ct.pop_front();
+  }
+ }
+
+ pub(crate) fn get_or_default(&self) -> ThemeColors {
+  let x: Option<Entry<'_, usize, ThemeColors>> = self.ct.back();
+
+  x.map(|x| x.value().clone())
+   .unwrap_or_default()
+ }
+
+ pub(crate) fn get(&self) -> Option<ThemeColors> {
+  let x: Option<Entry<'_, usize, ThemeColors>> = self.ct.back();
+  x.map(|x| x.value().clone())
+ }
+}
+
+// #[derive(Clone)]
+#[derive(Debug, Default)]
+pub(crate) struct Config {
+ pub(crate) debug: bool,
+ pub(crate) debugfile: Option<String>,
+ pub(crate) append_ndjson_bin: Option<String>,
+ pub(crate) load_ndjson_bin: Vec<String>,
+ pub(crate) append_ndjson_string: Option<String>,
+ pub(crate) load_ndjson_string: Vec<String>,
+ pub(crate) editor: bool,
+ // pub(crate) color_theme: RwLock<crate::color_theme::ColorTheme>,
+ // pub(crate) custom_theme_colors: RwLock<Option<crate::color_theme::ThemeColors>>,
+ // color_theme : SkipMap<>
+ pub(crate) all_color_themes: SkipMap<String, ThemeColors>,
+ pub(crate) color_theme: CurrentColorTheme,
+ // pub(crate) custom_color_theme: CurrentColorTheme,
+ pub(crate) suspend_threads: RwLock<()>,
+ pub(crate) suspended_threads: AtomicBool,
+ pub(crate) paused: Paused,
+}
+
+use crate::{
+ color_theme::{all_themes_skipmap, ThemeColors},
+ libmain::Args,
+};
 
 use std::fs::OpenOptions;
 
 use tracing::Level;
 
 impl Config {
- pub fn from_args(
-  args: &Args,
-  custom_theme_colors: Option<crate::color_theme::ThemeColors>,
- ) -> Self {
+ pub(crate) fn from_args(args: &Args) -> Self {
   if args.debug {
    if let Some(df) = args.debugfile.clone() {
     let file = OpenOptions::new()
@@ -215,8 +267,11 @@ impl Config {
    append_ndjson_string,
    load_ndjson_string,
    editor: args.editor,
-   color_theme: RwLock::new(args.color_theme),
-   custom_theme_colors: RwLock::new(custom_theme_colors),
+   // all_color_themes: SkipMap::<String, ThemeColors>::default(),
+   all_color_themes: all_themes_skipmap(),
+   // color_theme: CurrentColorTheme::new(args.color_theme),
+   color_theme: CurrentColorTheme::default(),
+   // custom_color_theme: CurrentColorTheme::from_option(custom_theme_colors),
    suspend_threads: RwLock::new(()),
    suspended_threads: AtomicBool::new(false),
    paused: Paused::new(args.paused),
@@ -235,23 +290,26 @@ impl Config {
   self.suspended_threads.load(Ordering::Relaxed)
  }
 
- pub fn save_theme_to_file(&self, path: &str) -> Result<(), String> {
-  let json = self.color_theme.read().unwrap().to_json();
+ pub(crate) fn save_theme_to_file(&self, path: &str) -> Result<(), String> {
+  let json = self.color_theme.get_or_default().to_json();
   std::fs::write(path, json).map_err(|e| format!("Failed to write theme file: {}", e))
  }
 
- pub fn load_theme_from_file(&self, path: &str) -> Result<crate::color_theme::ColorTheme, String> {
-  let content =
-   std::fs::read_to_string(path).map_err(|e| format!("Failed to read theme file: {}", e))?;
-  let theme_colors = crate::color_theme::ColorTheme::from_json(&content)?;
-  for (_name, theme) in crate::color_theme::ColorTheme::all_themes() {
-   let builtin = theme.get_colors();
-   if Self::colors_equal(&builtin, &theme_colors) {
-    return Ok(*theme);
-   }
-  }
-  Err("No matching built-in theme found".to_string())
- }
+ // pub(crate) fn load_theme_from_file(
+ //  &self,
+ //  path: &str,
+ // ) -> Result<crate::color_theme::ColorTheme, String> {
+ //  let content =
+ //   std::fs::read_to_string(path).map_err(|e| format!("Failed to read theme file: {}", e))?;
+ //  let theme_colors = crate::color_theme::ColorTheme::from_json(&content)?;
+ //  for (_name, theme) in crate::color_theme::ColorTheme::all_themes() {
+ //   let builtin = theme.get_colors();
+ //   if Self::colors_equal(&builtin, &theme_colors) {
+ //    return Ok(*theme);
+ //   }
+ //  }
+ //  Err("No matching built-in theme found".to_string())
+ // }
 
  fn colors_equal(a: &crate::color_theme::ThemeColors, b: &crate::color_theme::ThemeColors) -> bool {
   Self::color_eq(&a.window_bg, &b.window_bg)

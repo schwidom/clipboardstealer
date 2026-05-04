@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use crate::clipboards::AppendedCBEntry;
 use crate::clipboards::{cbentry::CBEntry, AcbeId, CBType};
-use crate::color_theme::{ColorTheme, ThemeColors};
+use crate::color_theme::ThemeColors;
 use crate::config::{self, Config};
 use crate::constants::{self, HELP_FIRST_PAGE, HELP_WQX};
 use crate::event::MyEvent;
@@ -28,7 +28,7 @@ use crate::tools::{flatline, tabfix};
 use enum_iterator::all;
 use mktemp::Temp;
 use ratatui::layout::{Alignment, Margin, Rect};
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget};
 use ratatui::DefaultTerminal;
@@ -541,7 +541,7 @@ struct LineStringsWrapped<'a> {
 
 /// manages the visible parts of a line in the pagers
 impl<'a> LineStrings<'a> {
- fn tabfix(&self, hoffset: usize, safe_area: Rect) -> LineStringsWrapped {
+ fn tabfix(&self, hoffset: usize, safe_area: Rect) -> LineStringsWrapped<'_> {
   let newtext2 = match &self.text {
    LineStringsType::S(text) => {
     let text = tabfix(text);
@@ -564,7 +564,7 @@ impl<'a> LineStrings<'a> {
     LineStringsWrappedType::S(newtext)
    }
 
-   LineStringsType::L(lines) => LineStringsWrappedType::L(lines.iter().cloned().collect()),
+   LineStringsType::L(lines) => LineStringsWrappedType::L(lines.to_vec()),
   };
 
   LineStringsWrapped {
@@ -824,7 +824,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 ///
 /// replaces the current Tsp or lays it onto the stack
 
-pub enum NextTsp {
+pub(crate) enum NextTsp {
  NoNextTsp,
  Replace(Rc<RefCell<dyn TermionScreenPainter>>),
  Stack(Rc<RefCell<dyn TermionScreenPainter>>),
@@ -852,7 +852,7 @@ impl Debug for NextTsp {
  }
 }
 
-pub trait TermionScreenPainter {
+pub(crate) trait TermionScreenPainter {
  // fn new(config: &'static Config) -> Self
  // where
  //  Self: Sized;
@@ -889,7 +889,7 @@ pub trait TermionScreenPainter {
  }
 }
 
-pub struct TermionScreenStatusBarDialogYN {
+pub(crate) struct TermionScreenStatusBarDialogYN {
  config: &'static Config,
  /// tsp_before is intended to allow the display of the previous dialog in a frozen state while the exit dialog is in effect
  ///
@@ -899,7 +899,7 @@ pub struct TermionScreenStatusBarDialogYN {
 }
 
 impl TermionScreenStatusBarDialogYN {
- pub fn new(
+ pub(crate) fn new(
   config: &'static Config,
   tsp_before: Rc<RefCell<dyn TermionScreenPainter>>,
   question: String,
@@ -949,14 +949,14 @@ impl TermionScreenPainter for TermionScreenStatusBarDialogYN {
  }
 }
 
-pub struct TermionScreenMenu {
+pub(crate) struct TermionScreenMenu {
  config: &'static Config,
  scroller: Scroller,
  items: Vec<&'static str>,
 }
 
 impl TermionScreenMenu {
- pub fn new(config: &'static Config) -> Self {
+ pub(crate) fn new(config: &'static Config) -> Self {
   Self {
    config,
    scroller: Scroller::new(),
@@ -990,12 +990,7 @@ impl TermionScreenPainter for TermionScreenMenu {
     },
    );
 
-   let theme_colors = self
-    .config
-    .color_theme
-    .read()
-    .unwrap()
-    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+   let theme_colors = self.config.color_theme.get_or_default();
 
    let all_lines = LineStringsConfig {
     line_strings: all_lines.as_ref(),
@@ -1057,34 +1052,33 @@ impl TermionScreenPainter for TermionScreenMenu {
  }
 }
 
-pub struct TermionScreenColorThemeChooser {
+pub(crate) struct TermionScreenColorThemeChooser {
  config: &'static Config,
  scroller: Scroller,
- themes: Vec<(String, ColorTheme)>,
- has_custom_theme: bool,
+ themes: Vec<(String, ThemeColors)>,
 }
 
 impl TermionScreenColorThemeChooser {
- pub fn new(config: &'static Config) -> Self {
-  let themes: Vec<(String, ColorTheme)> = ColorTheme::all_themes()
+ pub(crate) fn new(config: &'static Config) -> Self {
+  // let themes: Vec<(String, ColorTheme)> = ColorTheme::all_themes()
+  //  .iter()
+  //  .map(|(name, theme)| (name.to_string(), *theme))
+  //  .collect();
+  let themes: Vec<(String, ThemeColors)> = config
+   .all_color_themes
    .iter()
-   .map(|(name, theme)| (name.to_string(), *theme))
-   .collect();
-  let has_custom_theme = config.custom_theme_colors.read().unwrap().is_some();
+   .map(|x| (x.key().clone(), x.value().clone()))
+   .collect::<Vec<_>>();
+
   Self {
    config,
    scroller: Scroller::new(),
    themes,
-   has_custom_theme,
   }
  }
 
  fn total_entries(&self) -> usize {
-  if self.has_custom_theme {
-   self.themes.len() + 1
-  } else {
-   self.themes.len()
-  }
+  self.config.all_color_themes.len()
  }
 }
 
@@ -1101,49 +1095,26 @@ impl TermionScreenPainter for TermionScreenColorThemeChooser {
     .scroller
     .set_windowlength(inner_main_rect.height as usize);
 
-   let theme_colors = self
-    .config
-    .color_theme
-    .read()
-    .unwrap()
-    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+   let theme_colors = self.config.color_theme.get_or_default();
 
    let cursor_in_window = self.scroller.get_cursor_in_window();
    let window_position = self.scroller.get_windowposition();
 
-   let themes_count = self.themes.len();
-   let has_custom = self.has_custom_theme;
+   // let themes_count = self.config.all_color_themes.len();
 
    let mut lines: Vec<LineStrings> = Vec::new();
 
-   for idx in 0..total {
+   for idx in self.scroller.get_safe_windowrange() {
     let is_cursor = match cursor_in_window {
      None => false,
      Some(value) => idx == window_position + value,
     };
     let cursor_star = if is_cursor { ">" } else { " " };
 
-    let name = if has_custom && idx == themes_count {
-     "custom".to_string()
-    } else if idx < themes_count {
-     self.themes[idx].0.clone()
-    } else {
-     continue;
-    };
+    let name = self.themes[idx].0.clone();
 
-    let tc = if has_custom && idx == themes_count {
-     self
-      .config
-      .custom_theme_colors
-      .read()
-      .unwrap()
-      .clone()
-      .unwrap_or_default()
-    } else if idx < themes_count {
-     self.themes[idx].1.get_colors()
-    } else {
-     ThemeColors::default()
-    };
+    let tc = self.themes[idx].1.clone();
+
     let swatch = |c: Option<Color>| -> Span {
      match c {
       Some(c) => Span {
@@ -1159,7 +1130,7 @@ impl TermionScreenPainter for TermionScreenColorThemeChooser {
     let swatches = vec![
      Span {
       style: Style::new(),
-      content: format!(" {}", name).into(),
+      content: format!(" {:15}", name).into(),
      },
      swatch(tc.window_bg),
      swatch(tc.window_fg),
@@ -1224,23 +1195,11 @@ impl TermionScreenPainter for TermionScreenColorThemeChooser {
     if let Some(cursor) = self.scroller.get_cursor_in_content_array() {
      if cursor < self.themes.len() {
       let theme_name = self.themes[cursor].0.clone();
-      let theme = self.themes[cursor].1;
-      let mut color_theme = self.config.color_theme.write().unwrap();
-      *color_theme = theme;
-      drop(color_theme);
-      let mut custom = self.config.custom_theme_colors.write().unwrap();
-      *custom = None;
-      drop(custom);
+      let theme = self.themes[cursor].1.clone();
+      self.config.color_theme.set(theme);
       assd
        .statusline_heap
-       .push(StatusSeverity::Info, format!("Theme changed to {}", theme_name));
-     } else if self.has_custom_theme && cursor == self.themes.len() {
-      let mut color_theme = self.config.color_theme.write().unwrap();
-      *color_theme = ColorTheme::Default;
-      drop(color_theme);
-      assd
-       .statusline_heap
-       .push(StatusSeverity::Info, "Theme changed to custom".to_string());
+       .push(StatusSeverity::InfoShort, format!("Theme changed to {}", theme_name));
      }
      return NextTsp::NoNextTsp;
     }
@@ -1253,7 +1212,7 @@ impl TermionScreenPainter for TermionScreenColorThemeChooser {
  }
 }
 
-pub struct TermionScreenFirstPage {
+pub(crate) struct TermionScreenFirstPage {
  config: &'static Config,
  // scroller_main: WrapScroller,
  scroller_main: Scroller,
@@ -1284,7 +1243,7 @@ enum FilteredCbsEntries {
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
 impl TermionScreenFirstPage {
- pub fn new(config: &'static Config) -> Self {
+ pub(crate) fn new(config: &'static Config) -> Self {
   Self {
    config,
    // scroller_main: WrapScroller::default(),
@@ -1674,12 +1633,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
     //  .flat_map(|x| vec![(*x).clone(), (*x).clone()])
     //  .collect::<Vec<LineStrings>>();
 
-    let theme_colors = self
-     .config
-     .color_theme
-     .read()
-     .unwrap()
-     .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+    let theme_colors = self.config.color_theme.get_or_default();
 
     let all_lines = LineStringsConfig {
      line_strings: &all_lines,
@@ -1952,7 +1906,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
  }
 }
 
-pub struct TermionScreenEditorPage {
+pub(crate) struct TermionScreenEditorPage {
  config: &'static Config,
  tmpfile: Temp,
  tmpfile_path: PathBuf,
@@ -1961,7 +1915,11 @@ pub struct TermionScreenEditorPage {
 }
 
 impl TermionScreenEditorPage {
- pub fn new(config: &'static Config, text: String, entry_id: AcbeId) -> Result<Self, String> {
+ pub(crate) fn new(
+  config: &'static Config,
+  text: String,
+  entry_id: AcbeId,
+ ) -> Result<Self, String> {
   let tmpfile = Temp::new_file().map_err(|e| format!("Failed to create temp file: {}", e))?;
   let tmpfile_path = tmpfile.to_path_buf();
   let mut fs = File::create(&tmpfile).map_err(|e| format!("Failed to create temp file: {}", e))?;
@@ -2044,7 +2002,7 @@ impl TermionScreenPainter for TermionScreenEditorPage {
  }
 }
 
-pub struct TermionScreenViewPage {
+pub(crate) struct TermionScreenViewPage {
  config: &'static Config,
  main_title: String,
  scroller: Scroller,
@@ -2128,12 +2086,7 @@ impl TermionScreenPainter for TermionScreenViewPage {
    // for R::Old
    // let all_lines = all_lines.join( "\n");
 
-   let theme_colors = self
-    .config
-    .color_theme
-    .read()
-    .unwrap()
-    .get_colors_with_override(self.config.custom_theme_colors.read().unwrap().as_ref());
+   let theme_colors = self.config.color_theme.get_or_default();
 
    let all_lines = LineStringsConfig {
     line_strings: all_lines.as_ref(),

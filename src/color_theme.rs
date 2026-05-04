@@ -1,10 +1,11 @@
+use crossbeam_skiplist::SkipMap;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum ColorTheme {
+enum ColorTheme {
  #[default]
  Default,
  Nord,
@@ -39,16 +40,16 @@ impl FromStr for ColorTheme {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ThemeColorsJson {
- pub window_bg: Option<String>,
- pub window_fg: Option<String>,
- pub cursor: Option<String>,
- pub cursor_inactive: Option<String>,
- pub line_number: Option<String>,
- pub text: Option<String>,
- pub border: Option<String>,
- pub border_inactive: Option<String>,
- pub menu: Option<String>,
+pub(crate) struct ThemeColorsJson {
+ pub(crate) window_bg: Option<String>,
+ pub(crate) window_fg: Option<String>,
+ pub(crate) cursor: Option<String>,
+ pub(crate) cursor_inactive: Option<String>,
+ pub(crate) line_number: Option<String>,
+ pub(crate) text: Option<String>,
+ pub(crate) border: Option<String>,
+ pub(crate) border_inactive: Option<String>,
+ pub(crate) menu: Option<String>,
 }
 
 impl ThemeColorsJson {
@@ -107,24 +108,46 @@ fn dim_color(color: Option<Color>) -> Option<Color> {
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
-pub struct ThemeColors {
- pub window_bg: Option<Color>,
- pub window_fg: Option<Color>,
- pub cursor: Option<Color>,
- pub cursor_inactive: Option<Color>,
- pub line_number: Option<Color>,
- pub text: Option<Color>,
- pub border: Option<Color>,
- pub border_inactive: Option<Color>,
- pub menu: Option<Color>,
+pub(crate) struct ThemeColors {
+ pub(crate) window_bg: Option<Color>,
+ pub(crate) window_fg: Option<Color>,
+ pub(crate) cursor: Option<Color>,
+ pub(crate) cursor_inactive: Option<Color>,
+ pub(crate) line_number: Option<Color>,
+ pub(crate) text: Option<Color>,
+ pub(crate) border: Option<Color>,
+ pub(crate) border_inactive: Option<Color>,
+ pub(crate) menu: Option<Color>,
+}
+
+impl ThemeColors {
+ pub(crate) fn to_json(&self) -> String {
+  let colors = self;
+  let json_colors = ThemeColorsJson {
+   window_bg: color_to_hex(&colors.window_bg),
+   window_fg: color_to_hex(&colors.window_fg),
+   cursor: color_to_hex(&colors.cursor),
+   cursor_inactive: color_to_hex(&colors.cursor_inactive),
+   line_number: color_to_hex(&colors.line_number),
+   text: color_to_hex(&colors.text),
+   border: color_to_hex(&colors.border),
+   border_inactive: color_to_hex(&colors.border_inactive),
+   menu: color_to_hex(&colors.menu),
+  };
+  serde_json::to_string_pretty(&json_colors).unwrap_or_default()
+ }
+
+ pub(crate) fn from_json(json_str: &str) -> Result<ThemeColors, String> {
+  ColorTheme::from_json(json_str)
+ }
 }
 
 impl ColorTheme {
- pub fn get_colors(&self) -> ThemeColors {
+ pub(crate) fn get_colors(&self) -> ThemeColors {
   self.get_colors_with_override(None)
  }
 
- pub fn get_colors_with_override(&self, custom: Option<&ThemeColors>) -> ThemeColors {
+ pub(crate) fn get_colors_with_override(&self, custom: Option<&ThemeColors>) -> ThemeColors {
   if let Some(colors) = custom {
    let mut colors = colors.clone();
    if colors.cursor_inactive.is_none() {
@@ -372,7 +395,7 @@ impl ColorTheme {
   colors
  }
 
- pub fn all_themes() -> &'static [(&'static str, ColorTheme)] {
+ pub(crate) fn all_themes() -> &'static [(&'static str, ColorTheme)] {
   &[
    ("default", ColorTheme::Default),
    ("nord", ColorTheme::Nord),
@@ -399,7 +422,7 @@ impl ColorTheme {
   ]
  }
 
- pub fn to_json(&self) -> String {
+ pub(crate) fn to_json(&self) -> String {
   let colors = self.get_colors();
   let json_colors = ThemeColorsJson {
    window_bg: color_to_hex(&colors.window_bg),
@@ -415,7 +438,7 @@ impl ColorTheme {
   serde_json::to_string_pretty(&json_colors).unwrap_or_default()
  }
 
- pub fn from_json(json_str: &str) -> Result<ThemeColors, String> {
+ pub(crate) fn from_json(json_str: &str) -> Result<ThemeColors, String> {
   let json_colors: ThemeColorsJson =
    serde_json::from_str(json_str).map_err(|e| format!("Failed to parse theme JSON: {}", e))?;
   Ok(json_colors.to_theme_colors())
@@ -450,6 +473,14 @@ impl ColorTheme {
  }
 }
 
+pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
+ let ret = SkipMap::<String, ThemeColors>::default();
+ for i in ColorTheme::all_themes() {
+  ret.insert(i.0.into(), i.1.get_colors());
+ }
+ ret
+}
+
 impl fmt::Display for ColorTheme {
  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
   match self {
@@ -477,4 +508,8 @@ impl fmt::Display for ColorTheme {
    ColorTheme::Bordeaux => write!(f, "bordeaux"),
   }
  }
+}
+
+pub(crate) fn default_color_theme_name() -> String {
+ "default".into()
 }

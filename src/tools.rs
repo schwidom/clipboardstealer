@@ -12,8 +12,8 @@ use x11_clipboard::Atoms;
 use x11_clipboard::Clipboard;
 
 #[derive(Clone, PartialEq, Debug, PartialOrd, Eq, Ord)]
-pub struct MyTime {
- pub timestamp: DateTime<Local>,
+pub(crate) struct MyTime {
+ pub(crate) timestamp: DateTime<Local>,
 }
 
 impl Serialize for MyTime {
@@ -257,25 +257,25 @@ impl Display for MyTime {
 }
 
 // cannot create a const function
-pub fn create_local_unix_epoch() -> DateTime<Local> {
+pub(crate) fn create_local_unix_epoch() -> DateTime<Local> {
  const UNIX_EPOCH_UTC: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
  let timestamp: DateTime<Local> = DateTime::from(UNIX_EPOCH_UTC);
  timestamp
 }
 
 impl MyTime {
- pub fn unix_epoch() -> Self {
+ pub(crate) fn unix_epoch() -> Self {
   Self {
    timestamp: create_local_unix_epoch(),
   }
  }
- pub fn now() -> Self {
+ pub(crate) fn now() -> Self {
   Self {
    timestamp: Local::now(),
   }
  }
 
- pub fn from_str(s: &str) -> Self {
+ pub(crate) fn from_str(s: &str) -> Self {
   // let tmp = DateTime::parse_from_str(s, "%+");
   Self {
    timestamp: DateTime::parse_from_str(s, "%+")
@@ -284,7 +284,7 @@ impl MyTime {
   }
  }
 
- pub fn elapsed(&self) -> TimeDelta {
+ pub(crate) fn elapsed(&self) -> TimeDelta {
   Local::now() - self.timestamp
  }
 }
@@ -341,16 +341,16 @@ mod tests {
 use lazy_static::lazy_static;
 
 lazy_static! {
- pub static ref CB_ATOMS: Atoms = {
+ pub(crate) static ref CB_ATOMS: Atoms = {
   let cb = Clipboard::new().unwrap();
   cb.setter.atoms.clone()
  };
 }
 
-pub fn flatline(string: &str) -> String {
+pub(crate) fn flatline(string: &str) -> String {
  string.replace("\n", "\\n") // lcibiwnao0
 }
 
-pub fn tabfix(string: &str) -> String {
+pub(crate) fn tabfix(string: &str) -> String {
  string.replace("\t", "   ")
 }

@@ -4,10 +4,10 @@ use ratatui::layout::Rect;
 
 use crate::tools::flatline;
 
-pub struct Layout {
+pub(crate) struct Layout {
  // current_line: u16,
- pub width: Option<u16>,
- pub height: Option<u16>,
+ pub(crate) width: Option<u16>,
+ pub(crate) height: Option<u16>,
 }
 
 impl Default for Layout {
@@ -17,7 +17,7 @@ impl Default for Layout {
 }
 
 impl Layout {
- pub fn new() -> Self {
+ pub(crate) fn new() -> Self {
   Self {
    // current_line: 1,
    width: None,
@@ -43,7 +43,7 @@ impl Layout {
  //  self.current_line
  // }
 
- pub fn fixline(&self, string: &str) -> String {
+ pub(crate) fn fixline(&self, string: &str) -> String {
   let z = flatline(string); // lcibiwnao0
 
   // NOTE : writes over the end because we are not at the beginning of the line
@@ -59,7 +59,7 @@ impl Layout {
    .collect()
  }
 
- pub fn centerline(&self, string: &str) -> String {
+ pub(crate) fn centerline(&self, string: &str) -> String {
   let z = flatline(string);
   let width = self.width.unwrap_or(80) as usize - 2;
   if z.len() >= width {
@@ -68,8 +68,8 @@ impl Layout {
   format!("{:^width$}", z)
  }
 
- // pub fn print_line_wrap(&mut self) {}
- // pub fn print_line_cut(&mut self, line: &str) {
+ // pub(crate) fn print_line_wrap(&mut self) {}
+ // pub(crate) fn print_line_cut(&mut self, line: &str) {
  //  print!("{}", termion::cursor::Goto(1, self.current_line));
  //  print!("{}", self.fixline(line));
  //  print!("{}", termion::clear::UntilNewline);

@@ -13,7 +13,7 @@ use ratatui::{
 };
 
 // TODO : rename
-pub trait PagerLayout {
+pub(crate) trait PagerLayout {
  fn new(frame: &Frame) -> Self
  where
   Self: Sized;
@@ -22,10 +22,10 @@ pub trait PagerLayout {
  fn get_second_main_area(&self) -> Option<&Rect>;
  fn get_status_area(&self) -> &Rect;
 }
-pub struct PagerLayoutBase {
- pub title_area: Rect,
- pub main_area: Rect,
- pub status_area: Rect,
+pub(crate) struct PagerLayoutBase {
+ pub(crate) title_area: Rect,
+ pub(crate) main_area: Rect,
+ pub(crate) status_area: Rect,
 }
 
 impl PagerLayout for PagerLayoutBase {
@@ -59,11 +59,11 @@ impl PagerLayout for PagerLayoutBase {
  }
 }
 
-pub struct PagerLayoutTB {
- pub title_area: Rect,
- pub main_area_top: Rect,
- pub main_area_bottom: Rect,
- pub status_area: Rect,
+pub(crate) struct PagerLayoutTB {
+ pub(crate) title_area: Rect,
+ pub(crate) main_area_top: Rect,
+ pub(crate) main_area_bottom: Rect,
+ pub(crate) status_area: Rect,
 }
 
 impl PagerLayout for PagerLayoutTB {
@@ -98,11 +98,11 @@ impl PagerLayout for PagerLayoutTB {
  }
 }
 
-pub struct PagerLayoutLR {
- pub title_area: Rect,
- pub main_area_left: Rect,
- pub main_area_right: Rect,
- pub status_area: Rect,
+pub(crate) struct PagerLayoutLR {
+ pub(crate) title_area: Rect,
+ pub(crate) main_area_left: Rect,
+ pub(crate) main_area_right: Rect,
+ pub(crate) status_area: Rect,
 }
 
 impl PagerLayout for PagerLayoutLR {

@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::ops::Deref;
 // use std::ops::AddAssign;
 use std::path::Path;
 use std::rc::Rc;
@@ -49,7 +48,7 @@ use cbentry::CBEntry;
 // let mut cfmap = HashMap::new();
 
 #[derive(Sequence, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
-pub enum CBType {
+pub(crate) enum CBType {
  Primary,   // mouse selection, shift-ins, middle mouse
  Secondary, // unknown keys, ancient clipboard
  Clipboard, // [shift] ( ctrl-c / ctrl-v )
@@ -84,7 +83,7 @@ impl CBType {
   }
  }
 
- pub fn get_info(&self) -> String {
+ pub(crate) fn get_info(&self) -> String {
   match self {
    CBType::Primary => "p",
    CBType::Secondary => "s",
@@ -95,7 +94,7 @@ impl CBType {
 }
 
 /** simplifies the reading / writing to a specific clipboard ( primary and clipboard) */
-pub struct ClipboardReaderWriter {
+pub(crate) struct ClipboardReaderWriter {
  cb: Clipboard,
  atom: Atom,
  // atoms: Atoms,
@@ -105,7 +104,7 @@ pub struct ClipboardReaderWriter {
 }
 
 // #[cfg(test)]
-// pub trait ClipboardReaderTrait: Send {
+// pub(crate) trait ClipboardReaderTrait: Send {
 //  fn crw_read(&self) -> Option<Vec<u8>>;
 //  fn crw_write(&self, s: String) -> bool;
 //  fn cbtype(&self) -> CBType;
@@ -113,7 +112,7 @@ pub struct ClipboardReaderWriter {
 // }
 
 // #[cfg(test)]
-// pub struct MockClipboardReaderWriter {
+// pub(crate) struct MockClipboardReaderWriter {
 //  read_data: RefCell<Option<Vec<u8>>>,
 //  written_data: RefCell<Vec<Vec<u8>>>,
 //  cbtype: CBType,
@@ -122,7 +121,7 @@ pub struct ClipboardReaderWriter {
 
 // #[cfg(test)]
 // impl MockClipboardReaderWriter {
-//  pub fn new(cbtype: CBType) -> Self {
+//  pub(crate) fn new(cbtype: CBType) -> Self {
 //   Self {
 //    read_data: RefCell::new(None),
 //    written_data: RefCell::new(Vec::new()),
@@ -131,11 +130,11 @@ pub struct ClipboardReaderWriter {
 //   }
 //  }
 
-//  pub fn set_read_data(&self, data: Vec<u8>) {
+//  pub(crate) fn set_read_data(&self, data: Vec<u8>) {
 //   *self.read_data.borrow_mut() = Some(data);
 //  }
 
-//  pub fn get_written(&self) -> Vec<Vec<u8>> {
+//  pub(crate) fn get_written(&self) -> Vec<Vec<u8>> {
 //   self.written_data.borrow().clone()
 //  }
 // }
@@ -161,9 +160,9 @@ pub struct ClipboardReaderWriter {
 // }
 
 #[derive(Default, PartialEq)]
-pub struct CrwReadInfo {
- pub text: Option<String>,
- pub echofree: bool,
+pub(crate) struct CrwReadInfo {
+ pub(crate) text: Option<String>,
+ pub(crate) echofree: bool,
 }
 
 impl ClipboardReaderWriter {
@@ -194,7 +193,7 @@ impl ClipboardReaderWriter {
   })
  }
 
- pub fn cbtype(&self) -> CBType {
+ pub(crate) fn cbtype(&self) -> CBType {
   CBType::from_atom(self.atom)
  }
 
@@ -242,7 +241,7 @@ impl ClipboardReaderWriter {
   }
  }
 
- pub fn crw_read_blocking(&self) -> Option<Vec<u8>> {
+ pub(crate) fn crw_read_blocking(&self) -> Option<Vec<u8>> {
   let selection = self.atom;
   self.crw_read(
    self
@@ -252,7 +251,7 @@ impl ClipboardReaderWriter {
   )
  }
 
- pub fn crw_read_nonblocking(&self) -> Option<Vec<u8>> {
+ pub(crate) fn crw_read_nonblocking(&self) -> Option<Vec<u8>> {
   let selection = self.atom;
   self.crw_read(self.cb.load(
    selection,
@@ -262,7 +261,7 @@ impl ClipboardReaderWriter {
   ))
  }
 
- pub fn crw_write(&self, s: String) -> bool {
+ pub(crate) fn crw_write(&self, s: String) -> bool {
   let value = s.as_bytes();
   let selection = self.atom;
 
@@ -272,7 +271,7 @@ impl ClipboardReaderWriter {
    .map_or_else(|_| false, |_| true)
  }
 
- pub fn crw_write_echofree(&self, s: Vec<u8>) -> bool {
+ pub(crate) fn crw_write_echofree(&self, s: Vec<u8>) -> bool {
   let mut echofree = self.echofree.lock().unwrap();
   echofree.insert(s.clone());
   self
@@ -290,7 +289,7 @@ impl ClipboardReaderWriter {
  }
 }
 
-pub mod cbentry {
+pub(crate) mod cbentry {
  use crate::scroller::Scroller;
 
  use super::CBType;
@@ -301,7 +300,7 @@ pub mod cbentry {
  use std::cell::OnceCell;
 
  #[derive(Debug, Clone, Serialize, Deserialize)]
- pub struct CBEntry {
+ pub(crate) struct CBEntry {
   cbtype: CBType,
   timestamp: MyTime,
   data: Vec<u8>,
@@ -314,14 +313,14 @@ pub mod cbentry {
  }
 
  #[derive(Debug, Clone, Serialize, Deserialize)]
- pub struct CBEntryString {
+ pub(crate) struct CBEntryString {
   cbtype: CBType,
   timestamp: MyTime,
   text: String,
  }
 
  impl CBEntry {
-  pub fn as_json_entry(&self) -> CBEntryString {
+  pub(crate) fn as_json_entry(&self) -> CBEntryString {
    CBEntryString {
     cbtype: self.cbtype.clone(),
     timestamp: self.timestamp.clone(),
@@ -329,7 +328,7 @@ pub mod cbentry {
    }
   }
 
-  pub fn from_json_entry(json_entry: CBEntryString) -> Self {
+  pub(crate) fn from_json_entry(json_entry: CBEntryString) -> Self {
    Self {
     cbtype: json_entry.cbtype.clone(),
     timestamp: json_entry.timestamp.clone(),
@@ -342,7 +341,7 @@ pub mod cbentry {
  }
 
  impl CBEntry {
-  pub fn new(data: &[u8]) -> Self {
+  pub(crate) fn new(data: &[u8]) -> Self {
    Self {
     cbtype: CBType::Clipboard,
     timestamp: MyTime::now(),
@@ -353,38 +352,38 @@ pub mod cbentry {
    }
   }
 
-  pub fn get_date_time(&self) -> String {
+  pub(crate) fn get_date_time(&self) -> String {
    let ret = format!("{}", self.timestamp);
    // 2025-02-24 20:25:40+01:00
    ret[0..19].into() // 2025-02-24 20:25:40
   }
 
-  pub fn get_cbtype(&self) -> CBType {
+  pub(crate) fn get_cbtype(&self) -> CBType {
    self.cbtype.clone()
   }
 
-  pub fn get_timestamp(&self) -> MyTime {
+  pub(crate) fn get_timestamp(&self) -> MyTime {
    self.timestamp.clone()
   }
 
-  pub fn get_data(&self) -> &Vec<u8> {
+  pub(crate) fn get_data(&self) -> &Vec<u8> {
    &self.data
   }
 
-  pub fn get_scroller_mut(&mut self) -> &mut Scroller {
+  pub(crate) fn get_scroller_mut(&mut self) -> &mut Scroller {
    &mut self.scroller
   }
 
-  pub fn get_scroller(&self) -> &Scroller {
+  pub(crate) fn get_scroller(&self) -> &Scroller {
    &self.scroller
   }
 
-  pub fn set_data(&mut self, data: &[u8]) {
+  pub(crate) fn set_data(&mut self, data: &[u8]) {
    self.data = Vec::from(data);
    self.text = OnceCell::default();
    self.string_cache = OnceCell::default();
   }
-  pub fn as_string(&self) -> Cow<'_, str> {
+  pub(crate) fn as_string(&self) -> Cow<'_, str> {
    Cow::Borrowed(
     self
      .string_cache
@@ -392,7 +391,7 @@ pub mod cbentry {
    )
   }
 
-  pub fn get_text(&self) -> &Vec<String> {
+  pub(crate) fn get_text(&self) -> &Vec<String> {
    self.text.get_or_init(|| {
     self
      .as_string()
@@ -402,7 +401,7 @@ pub mod cbentry {
    })
   }
 
-  pub fn swap_data(&mut self, other: &mut Self) {
+  pub(crate) fn swap_data(&mut self, other: &mut Self) {
    std::mem::swap(&mut self.data, &mut other.data);
    self.text = OnceCell::default();
    other.text = OnceCell::default();
@@ -410,7 +409,7 @@ pub mod cbentry {
    other.string_cache = OnceCell::default();
   }
 
-  pub fn from_cbtype_timestamp_data(cbtype: &CBType, timestamp: &MyTime, data: &[u8]) -> Self {
+  pub(crate) fn from_cbtype_timestamp_data(cbtype: &CBType, timestamp: &MyTime, data: &[u8]) -> Self {
    Self {
     cbtype: cbtype.clone(),
     timestamp: timestamp.clone(),
@@ -423,8 +422,8 @@ pub mod cbentry {
  }
 }
 pub(crate) struct ClipboardFixation {
- pub crw: ClipboardReaderWriter,
- pub fixation: Option<AppendedCBEntry>,
+ pub(crate) crw: ClipboardReaderWriter,
+ pub(crate) fixation: Option<AppendedCBEntry>,
 }
 
 impl ClipboardFixation {
@@ -446,7 +445,7 @@ impl ClipboardFixation {
 }
 
 #[derive(Default)]
-pub struct AcbeIdGenerator(AtomicUsize);
+pub(crate) struct AcbeIdGenerator(AtomicUsize);
 
 impl AcbeIdGenerator {
  fn inc(&mut self) -> AcbeId {
@@ -455,28 +454,28 @@ impl AcbeIdGenerator {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct AcbeId(usize);
+pub(crate) struct AcbeId(usize);
 
 impl AcbeId {
- pub fn new(seq: usize) -> Self {
+ pub(crate) fn new(seq: usize) -> Self {
   AcbeId(seq)
  }
 
- pub fn as_usize(self) -> usize {
+ pub(crate) fn as_usize(self) -> usize {
   self.0
  }
 
- pub fn inc(&mut self) {
+ pub(crate) fn inc(&mut self) {
   self.0 += 1;
  }
 }
 
 #[derive(Debug, Clone)]
-pub struct AppendedCBEntry {
- pub appended_bin: bool,
- pub appended_string: bool,
- pub cbentry: Rc<RefCell<CBEntry>>,
- pub id: AcbeId,
+pub(crate) struct AppendedCBEntry {
+ pub(crate) appended_bin: bool,
+ pub(crate) appended_string: bool,
+ pub(crate) cbentry: Rc<RefCell<CBEntry>>,
+ pub(crate) id: AcbeId,
 }
 
 impl AppendedCBEntry {
@@ -488,17 +487,17 @@ impl AppendedCBEntry {
 }
 
 /** managed clipboards by [crate::libmain::ClipboardThread] */
-pub struct Clipboards {
- // pub hm: HashMap<String, ClipboardSelectionList>,
- // pub crw: ClipboardReaderWriter,
+pub(crate) struct Clipboards {
+ // pub(crate) hm: HashMap<String, ClipboardSelectionList>,
+ // pub(crate) crw: ClipboardReaderWriter,
  cbentries: BTreeMap<AcbeId, AppendedCBEntry>,
  last_entries: HashMap<CBType, AppendedCBEntry>,
  // NOTE : no weak pointer here, Optional<Rc> is better,
  // even if entry disappears from the list (currently not possible but maybe later)
  // it can still be selected
- // pub fixation: HashMap< String, Option<Rc<CBEntry>>>,
- // pub cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
- // pub cfmap: HashMap<String, ClipboardFixation>,
+ // pub(crate) fixation: HashMap< String, Option<Rc<CBEntry>>>,
+ // pub(crate) cfmap: HashMap<&'static str, ClipboardFixation>, // macht probleme beim indexieren
+ // pub(crate) cfmap: HashMap<String, ClipboardFixation>,
  pub(crate) cfmap: HashMap<CBType, ClipboardFixation>,
  append_file_bin: Option<File>,
  append_file_bin_error_reported: bool,
@@ -514,7 +513,7 @@ impl Default for Clipboards {
 }
 
 impl Clipboards {
- pub fn new() -> Self {
+ pub(crate) fn new() -> Self {
   let cfmap: HashMap<CBType, ClipboardFixation> = all::<CBType>()
    .filter_map(|cbtype| match ClipboardFixation::from_cbtype(&cbtype) {
     Ok(cf) => Some((cbtype.clone(), cf)),
@@ -609,11 +608,11 @@ impl Clipboards {
   }
  }
 
- pub fn get_cbentries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
+ pub(crate) fn get_cbentries(&self) -> &BTreeMap<AcbeId, AppendedCBEntry> {
   &self.cbentries
  }
 
- pub fn get_entry_by_id(&self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
+ pub(crate) fn get_entry_by_id(&self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
   self
    .cbentries
    .get(&id)
@@ -621,7 +620,7 @@ impl Clipboards {
    .map(|e| e.cbentry.clone())
  }
 
- pub fn get_entry_by_id_mut(&mut self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
+ pub(crate) fn get_entry_by_id_mut(&mut self, id: AcbeId) -> Option<Rc<RefCell<CBEntry>>> {
   self.cbentries.get(&id).map(|e| e.cbentry.clone())
  }
 
@@ -667,7 +666,7 @@ impl Clipboards {
   Ok(())
  }
 
- pub fn append_ndjson_string(&mut self, append_filename_string: &str) -> Result<(), String> {
+ pub(crate) fn append_ndjson_string(&mut self, append_filename_string: &str) -> Result<(), String> {
   if self.append_file_string.is_none() && !self.append_file_string_error_reported {
    match OpenOptions::new()
     .create(true)
@@ -713,7 +712,7 @@ impl Clipboards {
   Ok(())
  }
 
- pub fn is_fixated(&self, cbentry: &Rc<RefCell<CBEntry>>) -> bool {
+ pub(crate) fn is_fixated(&self, cbentry: &Rc<RefCell<CBEntry>>) -> bool {
   self
    .cfmap
    .iter()
@@ -811,7 +810,7 @@ impl Clipboards {
  }
 
  // never!
- //  pub fn get_cbentries_mut(&mut self) -> &mut VecDeque<AppendedCBEntry> {
+ //  pub(crate) fn get_cbentries_mut(&mut self) -> &mut VecDeque<AppendedCBEntry> {
  //   &mut self.cbentries
  //  }
 
