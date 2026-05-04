@@ -1865,7 +1865,7 @@ impl TermionScreenPainter for TermionScreenFirstPage {
         Some(_) => self.delete_confirm_mode = Some(acbe.id),
         None => assd
          .statusline_heap
-         .push(StatusSeverity::Info, "not deletable".to_string()),
+         .push(StatusSeverity::InfoShort, "not deletable".to_string()),
        }
       }
      }
