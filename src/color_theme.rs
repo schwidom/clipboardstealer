@@ -1,9 +1,6 @@
 use crossbeam_skiplist::SkipMap;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::fmt;
-use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 

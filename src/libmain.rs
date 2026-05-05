@@ -1163,7 +1163,7 @@ pub fn main() {
      }
     }
    }
-   if None == color_theme_name {
+   if color_theme_name.is_none() {
     color_theme_name = last_color_theme_name;
    }
   }

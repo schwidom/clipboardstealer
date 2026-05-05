@@ -74,7 +74,6 @@ use enum_iterator::all;
 
 use crate::clipboards::CBType;
 
-use crate::clipboards::Clipboards;
 
 // use super::Main;
 
