@@ -56,7 +56,7 @@ use crate::{
  constants::{DISPLAY, EDITOR},
  debug::*,
  event::MyEvent,
- termionscreen::{TermionScreenFirstPage, TermionScreenPainter},
+ screen::{ScreenFirstPage, ScreenPainter},
  tools::MyTime,
 };
 
@@ -786,9 +786,9 @@ impl<'a> AppStateReceiver<'a> {
  fn run_loop(&mut self) {
   // self.running.store(true, Ordering::Relaxed);
   assert!(self.is_running());
-  let mut tsp_default: Rc<RefCell<dyn TermionScreenPainter>> =
-   Rc::new(RefCell::new(TermionScreenFirstPage::new(self.config)));
-  let mut tsp_stack: Vec<Rc<RefCell<dyn TermionScreenPainter>>> = vec![];
+  let mut tsp_default: Rc<RefCell<dyn ScreenPainter>> =
+   Rc::new(RefCell::new(ScreenFirstPage::new(self.config)));
+  let mut tsp_stack: Vec<Rc<RefCell<dyn ScreenPainter>>> = vec![];
 
   #[derive(Default)]
   struct EventState {
@@ -885,28 +885,28 @@ impl<'a> AppStateReceiver<'a> {
    let next_tsp = current_painter.handle_event(&ev, &mut self.data);
    drop(current_painter);
    if let MyEvent::Termion(Event::Key(Key::Esc)) = ev {
-    if !is_sticky && !matches!(next_tsp, crate::termionscreen::NextTsp::IgnoreBasicEvents) {
+    if !is_sticky && !matches!(next_tsp, crate::screen::NextTsp::IgnoreBasicEvents) {
      self.data.statusline_heap.pop();
     }
    }
    let mut ignore_basic_events = false;
    match next_tsp {
-    crate::termionscreen::NextTsp::NoNextTsp => {}
-    crate::termionscreen::NextTsp::Replace(rc) => {
+    crate::screen::NextTsp::NoNextTsp => {}
+    crate::screen::NextTsp::Replace(rc) => {
      if tsp_stack.is_empty() {
       tsp_default = rc;
      } else {
       *(tsp_stack.last_mut().unwrap()) = rc;
      }
     }
-    crate::termionscreen::NextTsp::Stack(rc) => tsp_stack.push(rc),
-    crate::termionscreen::NextTsp::Quit => {
+    crate::screen::NextTsp::Stack(rc) => tsp_stack.push(rc),
+    crate::screen::NextTsp::Quit => {
      break; // abifadosqa
     }
-    crate::termionscreen::NextTsp::PopThis => {
+    crate::screen::NextTsp::PopThis => {
      tsp_stack.pop();
     }
-    crate::termionscreen::NextTsp::IgnoreBasicEvents => {
+    crate::screen::NextTsp::IgnoreBasicEvents => {
      ignore_basic_events = true;
     }
    }
@@ -916,7 +916,7 @@ impl<'a> AppStateReceiver<'a> {
 
      if !tsp_before.borrow().is_sticky_dialog() {
       tsp_stack.push(Rc::new(RefCell::new(
-       crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+       crate::screen::ScreenStatusBarDialogYN::new(
         self.config,
         tsp_before,
         "exit? y/n".to_string(),
@@ -930,7 +930,7 @@ impl<'a> AppStateReceiver<'a> {
        if !tsp_before.borrow().is_sticky_dialog() {
         if tsp_stack.is_empty() {
          tsp_stack.push(Rc::new(RefCell::new(
-          crate::termionscreen::TermionScreenStatusBarDialogYN::new(
+          crate::screen::ScreenStatusBarDialogYN::new(
            self.config,
            tsp_before,
            "exit? y/n".to_string(),
