@@ -10,6 +10,6 @@ pub mod libmain;
 pub(crate) mod linuxeditor;
 pub(crate) mod log_conversion;
 pub(crate) mod pager;
-pub(crate) mod scroller;
 pub(crate) mod screen;
+pub(crate) mod scroller;
 pub(crate) mod tools;

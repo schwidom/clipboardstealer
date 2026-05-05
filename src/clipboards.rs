@@ -409,7 +409,11 @@ pub(crate) mod cbentry {
    other.string_cache = OnceCell::default();
   }
 
-  pub(crate) fn from_cbtype_timestamp_data(cbtype: &CBType, timestamp: &MyTime, data: &[u8]) -> Self {
+  pub(crate) fn from_cbtype_timestamp_data(
+   cbtype: &CBType,
+   timestamp: &MyTime,
+   data: &[u8],
+  ) -> Self {
    Self {
     cbtype: cbtype.clone(),
     timestamp: timestamp.clone(),

@@ -147,7 +147,10 @@ pub(crate) struct Args {
  pub(crate) color_theme: Option<String>,
  #[arg(long, default_value_t = false, help = "list available color themes")]
  pub(crate) color_themes: bool,
- #[arg(long, help = "load color theme from JSON file, can be applied different times")]
+ #[arg(
+  long,
+  help = "load color theme from JSON file, can be applied different times"
+ )]
  pub(crate) load_color_theme: Vec<String>,
  #[arg(long, help = "save current color theme to JSON file and exits")]
  pub(crate) save_color_theme: Option<String>,

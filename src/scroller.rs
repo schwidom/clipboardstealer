@@ -667,7 +667,6 @@ mod tests {
   assert_eq!(ws.get_cursor_in_window(), None);
   assert_eq!(ws.get_cursor_in_content_array(), None);
   assert_eq!(ws.get_windowposition(), 0);
-
  }
 
  #[test]

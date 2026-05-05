@@ -2,8 +2,8 @@ use crate::pager::Pager;
 
 use crate::libmain::StatusSeverity;
 
-use crate::config;
 use super::ScreenEditorPage;
+use crate::config;
 
 // use menu::ScreenMenu;
 

@@ -160,7 +160,7 @@ mod termionscreen_tests {
  use super::*;
  use crate::clipboards::CBType;
  use crate::config::Config;
-use crate::event::MyEvent;
+ use crate::event::MyEvent;
  use crate::libmain::AppStateReceiverData;
  use std::sync::mpsc::channel;
 

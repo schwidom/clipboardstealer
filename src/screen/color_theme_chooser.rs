@@ -1,6 +1,5 @@
 use crate::pager::Pager;
 
-
 use crate::libmain::StatusSeverity;
 
 use ratatui::text::Line;
@@ -12,9 +11,7 @@ use super::NextTsp;
 
 use crate::event::MyEvent;
 
-
 use super::ActiveArea;
-
 
 use super::TwoScreenDefaultWidget;
 

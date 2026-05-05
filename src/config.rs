@@ -183,8 +183,7 @@ impl CurrentColorTheme {
  pub(crate) fn get_or_default(&self) -> ThemeColors {
   let x: Option<Entry<'_, usize, ThemeColors>> = self.ct.back();
 
-  x.map(|x| x.value().clone())
-   .unwrap_or_default()
+  x.map(|x| x.value().clone()).unwrap_or_default()
  }
 
  pub(crate) fn get(&self) -> Option<ThemeColors> {
