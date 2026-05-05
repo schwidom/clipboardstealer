@@ -131,7 +131,11 @@ impl ScreenPainter for ScreenColorThemeChooser {
      swatch(tc.window_bg),
      swatch(tc.window_fg),
      swatch(tc.cursor),
+     swatch(tc.cursor_inactive),
+     swatch(tc.line_number),
+     swatch(tc.text),
      swatch(tc.border),
+     swatch(tc.border_inactive),
      swatch(tc.menu),
     ];
 

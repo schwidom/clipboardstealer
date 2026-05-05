@@ -142,15 +142,14 @@ pub(crate) struct Args {
  #[arg(
   short,
   long,
-  default_value_t = crate::color_theme::default_color_theme_name(),
   help = "select color theme (default, nord, solarized, dracula, ...)"
  )]
- pub(crate) color_theme: String,
+ pub(crate) color_theme: Option<String>,
  #[arg(long, default_value_t = false, help = "list available color themes")]
  pub(crate) color_themes: bool,
- #[arg(long, help = "load color theme from JSON file")]
- pub(crate) load_color_theme: Option<String>,
- #[arg(long, help = "save current color theme to JSON file")]
+ #[arg(long, help = "load color theme from JSON file, can be applied different times")]
+ pub(crate) load_color_theme: Vec<String>,
+ #[arg(long, help = "save current color theme to JSON file and exits")]
  pub(crate) save_color_theme: Option<String>,
 
  #[arg(long, help = "paused")]
@@ -915,13 +914,11 @@ impl<'a> AppStateReceiver<'a> {
      let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
 
      if !tsp_before.borrow().is_sticky_dialog() {
-      tsp_stack.push(Rc::new(RefCell::new(
-       crate::screen::ScreenStatusBarDialogYN::new(
-        self.config,
-        tsp_before,
-        "exit? y/n".to_string(),
-       ),
-      )));
+      tsp_stack.push(Rc::new(RefCell::new(crate::screen::ScreenStatusBarDialogYN::new(
+       self.config,
+       tsp_before,
+       "exit? y/n".to_string(),
+      ))));
      }
     } else {
      match ev {
@@ -929,13 +926,11 @@ impl<'a> AppStateReceiver<'a> {
        let tsp_before = Rc::clone(tsp_stack.last().unwrap_or(&tsp_default)); // pfna784hof
        if !tsp_before.borrow().is_sticky_dialog() {
         if tsp_stack.is_empty() {
-         tsp_stack.push(Rc::new(RefCell::new(
-          crate::screen::ScreenStatusBarDialogYN::new(
-           self.config,
-           tsp_before,
-           "exit? y/n".to_string(),
-          ),
-         )));
+         tsp_stack.push(Rc::new(RefCell::new(crate::screen::ScreenStatusBarDialogYN::new(
+          self.config,
+          tsp_before,
+          "exit? y/n".to_string(),
+         ))));
         } else {
          tsp_stack.pop();
         }
@@ -1064,28 +1059,6 @@ pub fn main() {
   }
  }
 
- // Handle --load-color-theme - load theme from JSON and use it
- let custom_theme_colors = if let Some(path) = &args.load_color_theme {
-  match std::fs::read_to_string(path) {
-   Ok(content) => match ThemeColors::from_json(&content) {
-    Ok(theme_colors) => {
-     println!("Loaded theme from {}", path);
-     Some(theme_colors)
-    }
-    Err(e) => {
-     eprintln!("Error parsing theme file: {}", e);
-     std::process::exit(1);
-    }
-   },
-   Err(e) => {
-    eprintln!("Error reading theme file: {}", e);
-    std::process::exit(1);
-   }
-  }
- } else {
-  None
- };
-
  {
   // warnings
 
@@ -1158,18 +1131,44 @@ pub fn main() {
  let config = Box::leak(Box::new(Config::from_args(&args)));
 
  {
-  let mut color_theme = args.color_theme.clone();
+  let mut color_theme_name = args.color_theme.clone();
 
-  if let Some(value) = custom_theme_colors {
-   let custom_color_name = String::from("custom");
-   config
-    .all_color_themes
-    .insert(custom_color_name.clone(), value.clone());
-   color_theme = custom_color_name;
+  // Handle --load-color-theme - load theme from JSON and use it
+  // let custom_theme_colors: Option<ThemeColors> = if let Some(path) = &args.load_color_theme
+
+  {
+   let mut last_color_theme_name: Option<String> = None;
+   for path in args.load_color_theme {
+    match std::fs::read_to_string(path.clone()) {
+     Ok(content) => match ThemeColors::from_json(&content) {
+      Ok(theme_colors) => {
+       println!("Loaded theme from {}", path);
+       // Some(theme_colors)
+       last_color_theme_name = Some(theme_colors.name.clone());
+       config
+        .all_color_themes
+        .insert(theme_colors.name.clone(), theme_colors);
+      }
+      Err(e) => {
+       eprintln!("Error parsing theme file: {}", e);
+       std::process::exit(1);
+      }
+     },
+     Err(e) => {
+      eprintln!("Error reading theme file: {}", e);
+      std::process::exit(1);
+     }
+    }
+   }
+   if None == color_theme_name {
+    color_theme_name = last_color_theme_name;
+   }
   }
 
-  if let Some(tc) = config.all_color_themes.get(&color_theme) {
-   config.color_theme.set(tc.value().clone());
+  if let Some(color_theme_name) = color_theme_name {
+   if let Some(tc) = config.all_color_themes.get(&color_theme_name) {
+    config.color_theme.set(tc.value().clone());
+   }
   }
  }
 

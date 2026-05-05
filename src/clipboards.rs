@@ -889,7 +889,6 @@ mod crw_tests {
 
 #[cfg(test)]
 mod clipboards_tests {
- use std::cell::Ref;
 
  use super::*;
 
