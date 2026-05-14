@@ -152,67 +152,6 @@ mod unicode_tests {
  }
 }
 
-#[cfg(test)]
-mod termionscreen_tests {
- use first_page::ScreenFirstPage;
- use termion::event::{Event, Key};
-
- use super::*;
- use crate::clipboards::CBType;
- use crate::config::Config;
- use crate::event::MyEvent;
- use crate::libmain::AppStateReceiverData;
- use std::sync::mpsc::channel;
-
- #[test]
- fn test_cb_inserted_sets_needs_refilter() {
-  let (sender, _receiver) = channel();
-  let config = Box::leak(Box::new(Config::default()));
-  let mut assd = AppStateReceiverData::new(config, sender);
-  assd
-   .cbs
-   .insert(&CBType::Clipboard, Some(b"test data".to_vec()));
-
-  let mut screen = ScreenFirstPage::new(config);
-
-  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
-  assert!(screen.needs_refilter);
-  assert_eq!(next, NextTsp::NoNextTsp);
- }
-
- #[test]
- fn test_cb_changed_updates_clipboard_and_refilters() {
-  let (sender, _receiver) = channel();
-  let config = Box::leak(Box::new(Config::default()));
-  let mut assd = AppStateReceiverData::new(config, sender);
-
-  let mut screen = ScreenFirstPage::new(config);
-
-  assd
-   .cbs
-   .insert(&CBType::Clipboard, Some(b"new entry".to_vec()));
-  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
-
-  assert!(screen.needs_refilter);
-  assert_eq!(next, NextTsp::NoNextTsp);
- }
-
- #[test]
- fn test_termion_event_key_handles_normally() {
-  let (sender, _receiver) = channel();
-  let config = Box::leak(Box::new(Config::default()));
-  let mut assd = AppStateReceiverData::new(config, sender);
-
-  let mut screen = ScreenFirstPage::new(config);
-  screen.needs_refilter = false;
-
-  let next = screen.handle_event(&MyEvent::Termion(Event::Key(Key::Char('a'))), &mut assd);
-
-  assert!(!screen.needs_refilter);
-  assert_eq!(next, NextTsp::NoNextTsp);
- }
-}
-
 // TODO : rename  to trim_text_to_rect
 fn trim_text_to_rect_with(text: &str, rect: Rect) -> String {
  // trace!("trim_text_to_rect_with: rect {:?}", rect);

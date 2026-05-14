@@ -42,9 +42,8 @@ use std::{
   mpsc::{self, Receiver, Sender},
   Arc, Mutex, RwLockWriteGuard,
  },
- thread,
- thread::JoinHandle,
- time::Duration,
+ thread::{self, JoinHandle},
+ time::{Duration, Instant},
 };
 
 use crossbeam_skiplist::SkipMap;
@@ -756,6 +755,7 @@ pub(crate) struct AppStateReceiver<'a> {
  config: &'static Config,
  data: AppStateReceiverData,
  tl: TermionLoop,
+ end_of_paint: Option<Instant>,
 }
 
 impl<'a> AppStateReceiver<'a> {
@@ -774,6 +774,7 @@ impl<'a> AppStateReceiver<'a> {
    config,
    data,
    tl: TermionLoop::new(),
+   end_of_paint: None,
   }
  }
 
@@ -838,13 +839,19 @@ impl<'a> AppStateReceiver<'a> {
     self.tl.suspend_raw_mode();
    }
 
-   match &mut self.tl.terminal.as_mut() {
-    Some(terminal) => {
-     current_painter.paint(terminal, &mut self.data);
+   if self
+    .end_of_paint
+    .is_none_or(|end_of_paint| end_of_paint.elapsed() > Duration::from_millis(5))
+   {
+    match &mut self.tl.terminal.as_mut() {
+     Some(terminal) => {
+      current_painter.paint(terminal, &mut self.data);
+     }
+     None => {
+      current_painter.paint_without_terminal(&mut self.data);
+     }
     }
-    None => {
-     current_painter.paint_without_terminal(&mut self.data);
-    }
+    self.end_of_paint = Some(Instant::now());
    }
 
    if current_painter.is_external_program() {

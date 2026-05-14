@@ -3,7 +3,7 @@ use std::{
  ops::{Deref, DerefMut, Range},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Scroller {
  /// can be freely defined
  windowlength: usize, // NOTE: u16 would be enough but lesser casting operations

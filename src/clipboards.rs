@@ -49,9 +49,23 @@ use cbentry::CBEntry;
 
 #[derive(Sequence, PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum CBType {
+ Clipboard, // [shift] ( ctrl-c / ctrl-v )
  Primary,   // mouse selection, shift-ins, middle mouse
  Secondary, // unknown keys, ancient clipboard
- Clipboard, // [shift] ( ctrl-c / ctrl-v )
+}
+
+#[cfg(test)]
+mod cbtype_tests {
+ use enum_iterator::all;
+
+ #[test]
+ fn cbtype_test() {
+  use super::CBType;
+  assert_eq!(
+   all::<CBType>().collect::<Vec<_>>(),
+   vec![CBType::Clipboard, CBType::Primary, CBType::Secondary]
+  );
+ }
 }
 
 impl CBType {
@@ -299,7 +313,7 @@ pub(crate) mod cbentry {
  use std::borrow::Cow;
  use std::cell::OnceCell;
 
- #[derive(Debug, Clone, Serialize, Deserialize)]
+ #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
  pub(crate) struct CBEntry {
   cbtype: CBType,
   timestamp: MyTime,
@@ -457,6 +471,11 @@ impl AcbeIdGenerator {
  }
 }
 
+#[cfg(test)]
+pub(crate) fn acbe_id_generator_inc(gen: &mut AcbeIdGenerator) -> AcbeId {
+ gen.inc()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct AcbeId(usize);
 
@@ -464,17 +483,9 @@ impl AcbeId {
  pub(crate) fn new(seq: usize) -> Self {
   AcbeId(seq)
  }
-
- pub(crate) fn as_usize(self) -> usize {
-  self.0
- }
-
- pub(crate) fn inc(&mut self) {
-  self.0 += 1;
- }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AppendedCBEntry {
  pub(crate) appended_bin: bool,
  pub(crate) appended_string: bool,
@@ -987,15 +998,15 @@ mod clipboards_tests {
   let mut clipboards = Clipboards::new();
   clipboards.insert(&CBType::Clipboard, Some(b"first".to_vec()));
   let first_id = clipboards.cbentries.last_entry().unwrap().get().id;
-  assert_eq!(first_id.as_usize(), 0);
+  assert_eq!(first_id, AcbeId(0));
 
   clipboards.insert(&CBType::Primary, Some(b"second".to_vec()));
   let second_id = clipboards.cbentries.last_entry().unwrap().get().id;
-  assert_eq!(second_id.as_usize(), 2);
+  assert_eq!(second_id, AcbeId(2));
 
   clipboards.insert(&CBType::Clipboard, Some(b"third".to_vec()));
   let third_id = clipboards.cbentries.last_entry().unwrap().get().id;
-  assert_eq!(third_id.as_usize(), 4);
+  assert_eq!(third_id, AcbeId(4));
  }
 
  #[test]

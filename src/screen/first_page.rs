@@ -14,6 +14,7 @@ use super::ScreenViewPage;
 
 // use super::IgnoreBasicEvents;
 
+use enum_iterator::reverse_all;
 use termion::event::Event;
 use termion::event::Key;
 use tracing::trace;
@@ -40,6 +41,8 @@ use super::LineStringsType;
 use super::LineStrings;
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use ratatui::layout::Margin;
@@ -68,12 +71,7 @@ use crate::tools::flatline;
 
 use crate::tools::tabfix;
 
-use std::cmp::Ordering;
-
-use enum_iterator::all;
-
 use crate::clipboards::CBType;
-
 
 // use super::Main;
 
@@ -93,33 +91,170 @@ use crate::scroller::Scroller;
 
 use crate::config::Config;
 
-pub(crate) struct ScreenFirstPage {
- pub(crate) config: &'static Config,
- // scroller_main: WrapScroller,
- pub(crate) scroller_main: Scroller,
- // scroller_second: Scroller,
- pub(crate) layout: Layout,
- pub(crate) flipstate: u8,
- pub(crate) wrapped: bool,
- pub(crate) paused: bool,
- pub(crate) regex_edit_mode: Option<String>,
- pub(crate) regex_edit_mode_state: String,
- pub(crate) regex_edit_mode_last_working: Option<Regex>,
- pub(crate) regex: Vec<Regex>,
- pub(crate) regex_filtered_cbs_entries: VecDeque<FilteredCbsEntries>,
- pub(crate) delete_confirm_mode: Option<AcbeId>,
- pub(crate) active_area: ActiveArea,
- pub(crate) main_width: usize,
- pub(crate) second_width: usize,
- pub(crate) prev_selected_text: Option<Vec<u8>>,
- pub(crate) needs_refilter: bool,
- pub(crate) last_entry_count: usize,
+#[derive(Default)]
+struct FollowCursor {
+ cursor_acbeid: Option<AcbeId>,
+ last_cursor_in_content_array: Option<usize>,
 }
 
-pub(crate) enum FilteredCbsEntries {
+fn follow_cursor(
+ scroller_main: &mut Scroller,
+ entries: &VecDeque<FilteredCbsEntry>,
+ fc: &mut FollowCursor,
+) {
+ // the scroller is always informed about the amount of entries, the cursor_in_content_array is always within that range
+ let cursor_in_content_array: Option<usize> = scroller_main.get_cursor_in_content_array();
+ // this never fails, it is None if cursor_in_content_array is None or the Entry is sth other than an FilteredCbsEntry::ACE
+ let cursor_points_to_acbeid: Option<AcbeId> =
+  cursor_in_content_array.and_then(|cica| match &entries[cica] {
+   FilteredCbsEntry::ACE(appended_cbentry) => Some(appended_cbentry.id),
+   _ => None,
+  });
+
+ match fc.cursor_acbeid {
+  None => {
+   fc.cursor_acbeid = cursor_points_to_acbeid;
+  }
+
+  Some(cursor_acbeid_inner) => match fc.last_cursor_in_content_array != cursor_in_content_array {
+   true => {
+    // user moved the cursor, no tracking needed
+    fc.cursor_acbeid = cursor_points_to_acbeid;
+   }
+   false => {
+    // user didn't move the cursor but new elements arrived or older vanished, the scroller needs to get in sync
+    let position: Option<usize> = entries.iter().enumerate().find_map(|(idx, x)| match x {
+     FilteredCbsEntry::ACE(appended_cbentry) => {
+      if appended_cbentry.id == cursor_acbeid_inner {
+       Some(idx)
+      } else {
+       None
+      }
+     }
+     _ => None,
+    });
+    if let Some(position) = position {
+     // the position has always a valid value, while always exits
+     while scroller_main.get_cursor_in_content_array() != Some(position) {
+      scroller_main.cursor_increase();
+     }
+    }
+   }
+  },
+ }
+
+ fc.last_cursor_in_content_array = scroller_main.get_cursor_in_content_array();
+}
+
+pub(crate) struct ScreenFirstPage {
+ config: &'static Config,
+ scroller_main: Scroller,
+ layout: Layout,
+ flipstate: u8,
+ wrapped: bool,
+ regex_edit_mode: Option<String>,
+ regex_edit_mode_state: String,
+ regex_edit_mode_last_working: Option<Regex>,
+ regexes: Vec<Regex>,
+ regex_filtered_cbs_entries: FilteredCbsEntries,
+ delete_confirm_mode: Option<AcbeId>,
+ active_area: ActiveArea,
+ main_width: usize,
+ second_width: usize,
+ prev_selected_text: Option<Vec<u8>>,
+ needs_refilter: bool,
+ last_entry_count: usize,
+ fc: FollowCursor,
+}
+
+#[derive(Debug, PartialEq)]
+enum FilteredCbsEntry {
  ACE(AppendedCBEntry),
- Line,
+ ActiveIncomingLine,
  Empty,
+}
+
+#[derive(Default, Debug, PartialEq)]
+struct FilteredCbsEntries {
+ fces: VecDeque<FilteredCbsEntry>,
+ /// start of the sorted values
+ sorted_idx: usize,
+}
+
+// fn filter_entries(&mut self, cbs: &mut crate::clipboards::Clipboards) -> Vec<FilteredCbsEntries>
+fn filter_entries(
+ regexes: &Vec<Regex>,
+ regex_edit_mode_last_working: &Option<Regex>,
+ entries: &BTreeMap<AcbeId, AppendedCBEntry>,
+ last_entries: &HashMap<CBType, AppendedCBEntry>,
+) -> FilteredCbsEntries {
+ // let entries: &BTreeMap<AcbeId, AppendedCBEntry> = cbs.get_cbentries();
+
+ // gtewxxi8oh
+ let mut regex_filtered_cbs_entries = entries
+  .values()
+  .rev()
+  .filter_map(|line| {
+   let mut res = true;
+   let mut r = regexes.clone();
+   r.extend(regex_edit_mode_last_working.iter().cloned());
+   for r in r {
+    if !r.is_match(&line.cbentry.borrow().as_string()) {
+     res = false;
+     break;
+    }
+   }
+   match res {
+    true => Some(FilteredCbsEntry::ACE(line.clone())),
+    false => None,
+   }
+  })
+  .collect::<VecDeque<_>>();
+
+ let cbtype_enum_vector_len;
+
+ {
+  // to have it in the correct order it has to be read out in reverse
+  let cbtype_enum_vector: Vec<CBType> = reverse_all::<CBType>().collect::<Vec<_>>();
+  let last_entries = cbtype_enum_vector
+   .iter()
+   .map(|x| last_entries.get(x))
+   .collect::<Vec<_>>();
+  cbtype_enum_vector_len = cbtype_enum_vector.len();
+
+  // sorting is bad for the user
+  // it would be better to place a marker for the last updated entry
+
+  // last_entries.sort_by(|a, b| match (a, b) {
+  //  (None, None) => Ordering::Equal,
+  //  (None, Some(_)) => Ordering::Less,
+  //  (Some(_), None) => Ordering::Greater,
+  //  (Some(c), Some(d)) => c
+  //   .cbentry
+  //   .borrow()
+  //   .get_timestamp()
+  //   .cmp(&d.cbentry.borrow().get_timestamp()),
+  // });
+
+  regex_filtered_cbs_entries.push_front(FilteredCbsEntry::ActiveIncomingLine);
+
+  last_entries
+   .iter()
+   .map(|x| match x {
+    Some(v) => FilteredCbsEntry::ACE((*v).clone()),
+    None => FilteredCbsEntry::Empty,
+   })
+   .for_each(|x| regex_filtered_cbs_entries.push_front(x));
+ }
+
+ let sorted_idx = cbtype_enum_vector_len // clipboards
+  + 1 // FilteredCbsEntry::ActiveIncomingLine
+ ;
+
+ FilteredCbsEntries {
+  fces: regex_filtered_cbs_entries,
+  sorted_idx,
+ }
 }
 
 // TODO : mode in the vicinity of first_page() definition (maybe inside)
@@ -133,12 +268,11 @@ impl ScreenFirstPage {
    layout: Layout::new(),
    flipstate: 1,
    wrapped: false,
-   paused: false,
    regex_edit_mode: None,
    regex_edit_mode_state: "".to_string(),
    regex_edit_mode_last_working: None,
-   regex: vec![],
-   regex_filtered_cbs_entries: VecDeque::new(),
+   regexes: vec![],
+   regex_filtered_cbs_entries: FilteredCbsEntries::default(),
    delete_confirm_mode: None,
    active_area: ActiveArea::Main,
    main_width: 80,
@@ -146,6 +280,7 @@ impl ScreenFirstPage {
    prev_selected_text: None,
    needs_refilter: true,
    last_entry_count: 0,
+   fc: FollowCursor::default(),
   }
  }
 
@@ -156,74 +291,26 @@ impl ScreenFirstPage {
   self.flipstate = (self.flipstate + 2) % 3;
  }
 
- pub(crate) fn update_filtered_entries(&mut self, cbs: &mut crate::clipboards::Clipboards) {
+ fn update_filtered_entries(&mut self, cbs: &mut crate::clipboards::Clipboards) {
   if !self.needs_refilter {
    return;
   }
   trace!("update_filtered_entries");
-  let entries = cbs.get_cbentries();
+  let entries: &BTreeMap<AcbeId, AppendedCBEntry> = cbs.get_cbentries();
+  let last_entries: &HashMap<CBType, AppendedCBEntry> = cbs.get_last_entries();
 
-  // gtewxxi8oh
-  self.regex_filtered_cbs_entries = entries
-   .values()
-   .rev()
-   .filter_map(|line| {
-    let mut res = true;
-    let mut r = self.regex.clone();
-    r.extend(self.regex_edit_mode_last_working.iter().cloned());
-    for r in r {
-     if !r.is_match(&line.cbentry.borrow().as_string()) {
-      res = false;
-      break;
-     }
-    }
-    match res {
-     true => Some(FilteredCbsEntries::ACE(line.clone())),
-     false => None,
-    }
-   })
-   .collect::<VecDeque<_>>();
+  self.regex_filtered_cbs_entries =
+   filter_entries(&self.regexes, &self.regex_edit_mode_last_working, entries, last_entries);
 
-  {
-   let cbtype_enum_vector: Vec<CBType> = all::<CBType>().collect::<Vec<_>>();
-   let mut last_entries = cbtype_enum_vector
-    .iter()
-    .map(|x| cbs.get_last_entries().get(x))
-    .collect::<Vec<_>>();
-
-   last_entries.sort_by(|a, b| match (a, b) {
-    (None, None) => Ordering::Equal,
-    (None, Some(_)) => Ordering::Less,
-    (Some(_), None) => Ordering::Greater,
-    (Some(c), Some(d)) => c
-     .cbentry
-     .borrow()
-     .get_timestamp()
-     .cmp(&d.cbentry.borrow().get_timestamp()),
-   });
-
-   self
-    .regex_filtered_cbs_entries
-    .push_front(FilteredCbsEntries::Line);
-
-   last_entries
-    .iter()
-    .map(|x| match x {
-     Some(v) => FilteredCbsEntries::ACE((*v).clone()),
-     None => FilteredCbsEntries::Empty,
-    })
-    .for_each(|x| self.regex_filtered_cbs_entries.push_front(x));
-  }
-
-  self.last_entry_count = cbs.get_cbentries().len();
+  self.last_entry_count = entries.len();
   self.needs_refilter = false;
  }
 
  pub(crate) fn get_max_hoffset_main(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-   let entries = &self.regex_filtered_cbs_entries;
+   let entries = &self.regex_filtered_cbs_entries.fces;
    if cursor < entries.len() {
-    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+    if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
      return tabfix(&flatline(&acbe.cbentry.borrow().as_string())).width();
     }
    }
@@ -233,9 +320,9 @@ impl ScreenFirstPage {
 
  pub(crate) fn get_max_hoffset_second(&self, _cbs: &crate::clipboards::Clipboards) -> usize {
   if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-   let entries = &self.regex_filtered_cbs_entries;
+   let entries = &self.regex_filtered_cbs_entries.fces;
    if cursor < entries.len() {
-    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+    if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
      let cbentry_borrowed = acbe.cbentry.borrow();
      let scroller_second = cbentry_borrowed.get_scroller();
      if let Some(cursor_second) = scroller_second.get_cursor_in_content_array() {
@@ -260,9 +347,9 @@ impl ScreenFirstPage {
 
  pub(crate) fn get_current_entry(&self) -> Option<RefMut<'_, CBEntry>> {
   if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-   let entries = &self.regex_filtered_cbs_entries;
+   let entries = &self.regex_filtered_cbs_entries.fces;
    if cursor < entries.len() {
-    if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+    if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
      let cbentry_borrowed = acbe.cbentry.borrow_mut();
      return Some(cbentry_borrowed);
     }
@@ -322,7 +409,7 @@ impl ScreenPainter for ScreenFirstPage {
 
    // cawxd8rc8j 0%
    {
-    let entries = &self.regex_filtered_cbs_entries;
+    let entries: &VecDeque<FilteredCbsEntry> = &self.regex_filtered_cbs_entries.fces;
 
     // let mut selected_string = Vec::<u8>::new();
     // let mut selected_lines = &Vec::<String>::new();
@@ -338,6 +425,8 @@ impl ScreenPainter for ScreenFirstPage {
     // self.scroller_second.set_hwindowlength(self.second_width);
 
     self.scroller_main.set_content_length(entries.len());
+
+    follow_cursor(&mut self.scroller_main, entries, &mut self.fc);
 
     // scroller.set_windowlength(height + 1 - layout.get_current_line());
 
@@ -365,7 +454,7 @@ impl ScreenPainter for ScreenFirstPage {
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
-     if let FilteredCbsEntries::ACE(appended_cbentry) = entry {
+     if let FilteredCbsEntry::ACE(appended_cbentry) = entry {
       let mut bm = appended_cbentry.cbentry.borrow_mut();
       let scroller_mut = bm.get_scroller_mut();
       // etzwepgkfl
@@ -387,7 +476,7 @@ impl ScreenPainter for ScreenFirstPage {
      let cursor_star = if is_cursor { ">" } else { " " };
 
      match entry {
-      FilteredCbsEntries::ACE(acbe) => {
+      FilteredCbsEntry::ACE(acbe) => {
        let cbentry = &acbe.cbentry;
        // let is_selected = entry.is_selected(cbs);
        let is_selected = cbs.is_fixated(cbentry);
@@ -441,7 +530,7 @@ impl ScreenPainter for ScreenFirstPage {
         });
        }
       }
-      FilteredCbsEntries::Line => {
+      FilteredCbsEntry::ActiveIncomingLine => {
        //  lines.push((layout.centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----"), "".to_string()));
        lines.push(LineStrings {
         wrapped: false,
@@ -452,7 +541,7 @@ impl ScreenPainter for ScreenFirstPage {
         text: LineStringsType::S("".to_string()),
        });
       }
-      FilteredCbsEntries::Empty => {
+      FilteredCbsEntry::Empty => {
        //  lines.push(("".into(), "".into()));
        lines.push(LineStrings {
         wrapped: false,
@@ -586,7 +675,7 @@ impl ScreenPainter for ScreenFirstPage {
      all_lines2,
      regex_edit_mode: self.regex_edit_mode.clone(),
      regex_edit_mode_state: self.regex_edit_mode_state.clone(),
-     regex_count: self.regex.len() + self.regex_edit_mode.is_some() as usize,
+     regex_count: self.regexes.len() + self.regex_edit_mode.is_some() as usize,
      delete_confirm_mode: self.delete_confirm_mode,
      statusline_heap: assd.statusline_heap.clone(),
      paused: self.config.paused.is_paused(),
@@ -628,7 +717,7 @@ impl ScreenPainter for ScreenFirstPage {
      if let Ok(regex) = Regex::new(&regex_edit_mode) {
       self.regex_edit_mode = None;
       self.regex_edit_mode_last_working = None;
-      self.regex.push(regex);
+      self.regexes.push(regex);
      }
     }
     MyEvent::Termion(Event::Key(Key::Backspace)) => {
@@ -664,7 +753,7 @@ impl ScreenPainter for ScreenFirstPage {
   } else {
    match evt {
     MyEvent::Termion(Event::Key(Key::Char('r'))) => {
-     self.regex.pop();
+     self.regexes.pop();
      self.needs_refilter = true;
     }
     //  MyEvent::SignalHook(SIGWINCH) => terminal_reinitialize = true,
@@ -686,8 +775,8 @@ impl ScreenPainter for ScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('s'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-      let entries = &self.regex_filtered_cbs_entries;
-      if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+      let entries = &self.regex_filtered_cbs_entries.fces;
+      if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
        cbs.toggle_fixation(&(*acbe).clone());
       }
       self.needs_refilter = true;
@@ -698,8 +787,8 @@ impl ScreenPainter for ScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('v'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-      let entries = &self.regex_filtered_cbs_entries;
-      if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+      let entries = &self.regex_filtered_cbs_entries.fces;
+      if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
        return NextTsp::Stack(Rc::new(RefCell::new(ScreenViewPage::new(
         self.config,
         "view entry".to_string(),
@@ -710,10 +799,10 @@ impl ScreenPainter for ScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('e'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-      let entries = &self.regex_filtered_cbs_entries;
+      let entries = &self.regex_filtered_cbs_entries.fces;
       // let entry = &entries[cursor];
 
-      if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+      if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
        match ScreenEditorPage::new(
         self.config,
         acbe.cbentry.borrow().as_string().into_owned(),
@@ -739,9 +828,9 @@ impl ScreenPainter for ScreenFirstPage {
     }
     MyEvent::Termion(Event::Key(Key::Char('d'))) => {
      if let Some(cursor) = self.scroller_main.get_cursor_in_content_array() {
-      let entries = &self.regex_filtered_cbs_entries;
+      let entries = &self.regex_filtered_cbs_entries.fces;
       if entries.is_empty() {
-      } else if let FilteredCbsEntries::ACE(acbe) = &entries[cursor] {
+      } else if let FilteredCbsEntry::ACE(acbe) = &entries[cursor] {
        match assd.cbs.get_cbentries().get(&acbe.id) {
         Some(_) => self.delete_confirm_mode = Some(acbe.id),
         None => assd
@@ -784,5 +873,149 @@ impl ScreenPainter for ScreenFirstPage {
    }
   }
   NextTsp::NoNextTsp
+ }
+}
+
+#[cfg(test)]
+mod screen_tests {
+ use super::ScreenFirstPage;
+ use termion::event::{Event, Key};
+
+ use super::*;
+ use crate::clipboards::CBType;
+ use crate::config::Config;
+ use crate::event::MyEvent;
+ use crate::libmain::AppStateReceiverData;
+ use std::sync::mpsc::channel;
+
+ #[test]
+ fn test_cb_inserted_sets_needs_refilter() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+  assd
+   .cbs
+   .insert(&CBType::Clipboard, Some(b"test data".to_vec()));
+
+  let mut screen = ScreenFirstPage::new(config);
+
+  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
+  assert!(screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
+ }
+
+ #[test]
+ fn test_cb_changed_updates_clipboard_and_refilters() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+
+  let mut screen = ScreenFirstPage::new(config);
+
+  assd
+   .cbs
+   .insert(&CBType::Clipboard, Some(b"new entry".to_vec()));
+  let next = screen.handle_event(&MyEvent::CbInserted, &mut assd);
+
+  assert!(screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
+ }
+
+ #[test]
+ fn test_termion_event_key_handles_normally() {
+  let (sender, _receiver) = channel();
+  let config = Box::leak(Box::new(Config::default()));
+  let mut assd = AppStateReceiverData::new(config, sender);
+
+  let mut screen = ScreenFirstPage::new(config);
+  screen.needs_refilter = false;
+
+  let next = screen.handle_event(&MyEvent::Termion(Event::Key(Key::Char('a'))), &mut assd);
+
+  assert!(!screen.needs_refilter);
+  assert_eq!(next, NextTsp::NoNextTsp);
+ }
+}
+
+#[cfg(test)]
+mod first_page_tests {
+ use std::cell::RefCell;
+ use std::collections::VecDeque;
+ use std::collections::{BTreeMap, HashMap};
+ use std::rc::Rc;
+
+ use enum_iterator::all;
+
+ use crate::clipboards::{acbe_id_generator_inc, AcbeIdGenerator, CBType};
+ use crate::screen::first_page::FilteredCbsEntries;
+ use crate::scroller;
+
+ use super::{filter_entries, follow_cursor, CBEntry, FilteredCbsEntry, FollowCursor, Scroller};
+
+ use super::FilteredCbsEntry::ActiveIncomingLine;
+ use super::FilteredCbsEntry::Empty;
+
+ #[test]
+ fn test_filter_entries() {
+  let cpcount = all::<CBType>().collect::<Vec<_>>().len();
+
+  let fce: FilteredCbsEntries = filter_entries(&vec![], &None, &BTreeMap::new(), &HashMap::new());
+  assert_eq!(
+   fce,
+   FilteredCbsEntries {
+    fces: VecDeque::from([Empty, Empty, Empty, ActiveIncomingLine]),
+    sorted_idx: cpcount + 1
+   }
+  );
+ }
+
+ #[test]
+ fn test_follow_cursor_001() {
+  // #![allow(unused)]
+
+  let mut scroller = Scroller::default();
+
+  let mut entries: VecDeque<FilteredCbsEntry> = VecDeque::new();
+
+  let mut seq_counter = AcbeIdGenerator::default();
+
+  entries.push_front(FilteredCbsEntry::ACE(super::AppendedCBEntry {
+   appended_bin: false,
+   appended_string: false,
+   cbentry: Rc::new(RefCell::new(CBEntry::new("hello world 001".as_bytes()))),
+   id: acbe_id_generator_inc(&mut seq_counter),
+  }));
+
+  entries.push_front(FilteredCbsEntry::ACE(super::AppendedCBEntry {
+   appended_bin: false,
+   appended_string: false,
+   cbentry: Rc::new(RefCell::new(CBEntry::new("hello world 002".as_bytes()))),
+   id: acbe_id_generator_inc(&mut seq_counter),
+  }));
+
+  scroller.set_content_length(entries.len());
+  scroller.set_windowlength(1);
+  scroller.cursor_increase(); // points to "hello world 002"
+
+  assert_eq!(Some(0), scroller.get_cursor_in_content_array());
+
+  let mut fc = FollowCursor::default();
+
+  follow_cursor(&mut scroller, &entries, &mut fc);
+
+  assert_eq!(Some(0), scroller.get_cursor_in_content_array());
+
+  entries.push_front(FilteredCbsEntry::ACE(super::AppendedCBEntry {
+   appended_bin: false,
+   appended_string: false,
+   cbentry: Rc::new(RefCell::new(CBEntry::new("hello world 003".as_bytes()))),
+   id: acbe_id_generator_inc(&mut seq_counter),
+  }));
+
+  scroller.set_content_length(entries.len());
+
+  follow_cursor(&mut scroller, &entries, &mut fc);
+
+  assert_eq!(Some(1), scroller.get_cursor_in_content_array()); // points to "hello world 002"
  }
 }
