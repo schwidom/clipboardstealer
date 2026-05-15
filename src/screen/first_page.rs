@@ -454,7 +454,10 @@ impl ScreenPainter for ScreenFirstPage {
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
+     let mut appended_cbentry__acbeid: Option<AcbeId> = None;
+
      if let FilteredCbsEntry::ACE(appended_cbentry) = entry {
+      appended_cbentry__acbeid = Some(appended_cbentry.id);
       let mut bm = appended_cbentry.cbentry.borrow_mut();
       let scroller_mut = bm.get_scroller_mut();
       // etzwepgkfl
@@ -474,6 +477,14 @@ impl ScreenPainter for ScreenFirstPage {
      };
 
      let cursor_star = if is_cursor { ">" } else { " " };
+     let newest_marker_star = if cbs
+      .get_last_psc_acbeid()
+      .is_some_and(|x| Some(x) == appended_cbentry__acbeid)
+     {
+      "l"
+     } else {
+      " "
+     };
 
      match entry {
       FilteredCbsEntry::ACE(acbe) => {
@@ -518,6 +529,7 @@ impl ScreenPainter for ScreenFirstPage {
         lines.push(LineStrings {
          wrapped: false,
          cursor: cursor_star.to_string(),
+         newest: Some(newest_marker_star.to_string()),
          line_number: format!(
           " {} {:width$} {} {} : ",
           selection_star,
@@ -535,6 +547,7 @@ impl ScreenPainter for ScreenFirstPage {
        lines.push(LineStrings {
         wrapped: false,
         cursor: cursor_star.to_string(),
+        newest: None,
         line_number: layout
          .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
          .to_string(),
@@ -546,6 +559,7 @@ impl ScreenPainter for ScreenFirstPage {
        lines.push(LineStrings {
         wrapped: false,
         cursor: cursor_star.to_string(),
+        newest: None,
         line_number: "".to_string(),
         text: LineStringsType::S("".to_string()),
        });
@@ -589,6 +603,7 @@ impl ScreenPainter for ScreenFirstPage {
        LineStrings {
         wrapped: self.wrapped,
         cursor: cursor_star.to_string(),
+        newest: None,
         line_number: format!(" {:width$} : ", idx, width = numbers_width,),
         text: LineStringsType::S(entry.to_string()),
        }

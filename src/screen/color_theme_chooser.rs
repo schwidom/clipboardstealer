@@ -139,6 +139,7 @@ impl ScreenPainter for ScreenColorThemeChooser {
     lines.push(LineStrings {
      wrapped: false,
      cursor: cursor_star.to_string(),
+     newest: None,
      line_number: "".to_string(),
      //  text: format!("{}   {}", name, swatches),
      text: LineStringsType::L(vec![Line::default().spans(swatches)]),

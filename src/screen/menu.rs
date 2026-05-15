@@ -79,6 +79,7 @@ impl ScreenPainter for ScreenMenu {
     |cursor_star, _idx, _numbers_width, entry| LineStrings {
      wrapped: false,
      cursor: cursor_star.to_string(),
+     newest: None,
      line_number: " ".to_string(),
      text: LineStringsType::S(entry.to_string()),
     },

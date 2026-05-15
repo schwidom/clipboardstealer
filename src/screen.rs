@@ -444,6 +444,7 @@ enum LineStringsType<'a> {
 struct LineStrings<'a> {
  wrapped: bool,
  cursor: String,
+ newest: Option<String>,
  line_number: String,
  text: LineStringsType<'a>,
 }
@@ -458,6 +459,7 @@ enum LineStringsWrappedType<'a> {
 struct LineStringsWrapped<'a> {
  wrapped: bool,
  cursor: String,
+ newest: Option<String>,
  line_number: String,
  text: LineStringsWrappedType<'a>,
 }
@@ -475,7 +477,10 @@ impl<'a> LineStrings<'a> {
      {
       apply_hoffset_and_trim_line3_array(
        // TODO : the "    " hack is not really good but works for the first part
-       &(String::from("    ") + &self.cursor + &self.line_number),
+       &(String::from("    ")
+        + &self.cursor
+        + &self.newest.clone().unwrap_or_default()
+        + &self.line_number),
        &text,
        safe_area,
        hoffset,
@@ -493,6 +498,7 @@ impl<'a> LineStrings<'a> {
   LineStringsWrapped {
    wrapped: self.wrapped,
    cursor: tabfix(&self.cursor),
+   newest: self.newest.clone().map(|x| tabfix(&x)),
    line_number: tabfix(&self.line_number),
    // text: tabfix(&self.text),
    text: newtext2,
@@ -547,7 +553,10 @@ impl<'a> LineStringsConfig<'a> {
        .iter()
        .map(|x| {
         apply_hoffset_and_trim_line3(
-         &(String::new() + &lsw.cursor + &lsw.line_number),
+         &(String::new()
+          + &lsw.cursor
+          + &lsw.newest.clone().unwrap_or_default()
+          + &lsw.line_number),
          x,
          safe_area,
          self.hoffset,
@@ -561,6 +570,7 @@ impl<'a> LineStringsConfig<'a> {
         let lsw = lsw.clone();
         Line::from(vec![
          Span::styled(lsw.cursor, cursor_style),
+         Span::styled(lsw.newest.unwrap_or_default(), cursor_style),
          Span::styled(lsw.line_number, line_number_style),
          Span::styled(res.1.clone(), text_style),
         ])

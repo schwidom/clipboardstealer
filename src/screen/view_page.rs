@@ -116,6 +116,7 @@ impl ScreenPainter for ScreenViewPage {
      LineStrings {
       wrapped: self.wrapped,
       cursor: cursor_star.to_string(),
+      newest: None,
       line_number: format!(" {:width$} : ", idx, width = numbers_width,),
       text: LineStringsType::S(entry.to_string()),
      }

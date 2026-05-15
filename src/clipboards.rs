@@ -519,6 +519,7 @@ pub(crate) struct Clipboards {
  append_file_string: Option<File>,
  append_file_string_error_reported: bool,
  seq_counter: AcbeIdGenerator,
+ last_psc_acbeid: Option<AcbeId>,
 }
 
 impl Default for Clipboards {
@@ -545,7 +546,12 @@ impl Clipboards {
    append_file_string: None,
    append_file_string_error_reported: false,
    seq_counter: AcbeIdGenerator::default(),
+   last_psc_acbeid: None,
   }
+ }
+
+ pub(crate) fn get_last_psc_acbeid(&self) -> Option<AcbeId> {
+  self.last_psc_acbeid
  }
 
  pub(crate) fn insert(&mut self, cbtype: &CBType, string: Option<Vec<u8>>) {
@@ -594,7 +600,8 @@ impl Clipboards {
     let cbentry = CBEntry::from_cbtype_timestamp_data(cbtype, &now, &s);
 
     let cbentry = Rc::new(RefCell::new(cbentry));
-    let id = self.seq_counter.inc();
+    let id: AcbeId = self.seq_counter.inc();
+    self.last_psc_acbeid = Some(id);
     self.cbentries.insert(
      id,
      AppendedCBEntry {
@@ -608,7 +615,8 @@ impl Clipboards {
     // drop(id); // does nothing
     // second ID avoids conflicts
     if !fixation_is_active {
-     let id = self.seq_counter.inc();
+     let id: AcbeId = self.seq_counter.inc();
+     self.last_psc_acbeid = Some(id);
      self.last_entries.insert(
       cbentry.borrow().get_cbtype(),
       AppendedCBEntry {
