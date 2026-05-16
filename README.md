@@ -1,5 +1,5 @@
 
-![Animation](https://raw.githubusercontent.com/schwidom/assets/refs/heads/main/xclip-tui/presentation_4.2.1.gif)
+![Animation](https://raw.githubusercontent.com/schwidom/assets/refs/heads/main/xclip-tui/presentation_4.10.4.gif)
 
 # Usage: clipboardstealer [OPTIONS]
 
