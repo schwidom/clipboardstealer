@@ -67,9 +67,13 @@ Overview:
 - is a clipboard manager
 - runs in a terminal window, 
 - captures the X11 clipboards named: primary, secondary and clipboard
-- works also with xwayland (tested on debian 13)
+- works also with xwayland (tested on Debian 13)
 - allows selection of all three of them
-- enforces the user choice (on shortcut s)
+- enforces the user choice (on shortcut `s`)
+- allows editing of entries
+- dual-pane interface: entry list and detail view
+- * marks fixated entries, l marks newest entry per clipboard type
+- cursor tracks selected entry as new entries arrive
 
 Installation:
 
@@ -84,32 +88,38 @@ Keys:
  orientation: Up, Down, PgUp, PgDown, Home, End
  orientation: Left, Right, Shift Left, Shift Right
 
- / (push), r (pop) ... stacked regex search
+ / (push) ... enter regex search mode (Enter confirms, Esc cancels)
+ r (pop)  ... removes the last regex from the stack
+
+ Help and Navigation:
 
  (h)elp   ... this screen 
+ (m)enu   ... opens the menu screen
  (v)iew   ... shows the selected entry
  (e)dit   ... edit the selected entry
- (d)elete ... deletes the selected entry
- (t)oggle ... toggles the contents of the clipboards 'primary' and 'clipboards'
+ (d)elete ... deletes the selected entry (y/n confirmation)
+ (t)oggle ... toggles the contents of the clipboards 'primary' and 'clipboard'
 
- (s)elect ... selects the chosen entry and 
-              enforces it for the specific 
-              primary, secondary or clipboard clipboards
+ Selection and Layout:
+
+ (s)elect ... toggles fixation of the entry (fixated entries marked with *, enforced on clipboard change)
  (t)oggle ... toggles primary <-> clipboard
  (fF)lip ... the layout
  (w)rap  ... wraps the lines
  (p)ause ... pauses the clipboard scanning, continues with p
 
+ Other Controls:
+
  Esc     ... discard status messages
  Esc     ... stop regex editing
 
- Tab    ... switch windows
+ Tab    ... switch focus between entry list and detail view
 
  (q)uit  ... exits a screen
  e(x)it  ... exits the program
  Ctrl-C  ... exits the program
 
-URLs : 
+URLs: 
 https://crates.io/crates/clipboardstealer
 https://github.com/schwidom/clipboardstealer
 

@@ -56,6 +56,9 @@
 - allows selection of all three of them
 - enforces the user choice (on shortcut `s`)
 - allows editing of entries
+- dual-pane interface: entry list and detail view
+- `*` marks fixated entries, `l` marks newest entry per clipboard type
+- cursor tracks selected entry as new entries arrive
 
 ## Installation:
 
@@ -69,25 +72,28 @@
 - **orientation**: Up, Down, PgUp, PgDown, Home, End
 - **orientation**: Left, Right, Shift Left, Shift Right
 
-- `/` (push), `r` (pop) ... stacked regex search
+- `/` (push) ... enter regex search mode (Enter confirms, Esc cancels)
+- `r` (pop)  ... removes the last regex from the stack
 
 - **Help and Navigation:**
 
 ```plaintext
 (h)elp   ... this screen
+(m)enu   ... opens the menu screen
 (v)iew   ... shows the selected entry
 (e)dit   ... edit the selected entry
-(d)elete ... deletes the selected entry
-(t)oggle ... toggles the contents of the clipboards 'primary' and 'clipboards'
+(d)elete ... deletes the selected entry (y/n confirmation)
+(t)oggle ... toggles the contents of the clipboards 'primary' and 'clipboard'
 ```
 
 - **Selection and Layout:**
 
 ```plaintext
-(s)elect ... selects the chosen entry and enforces it for the specific primary, secondary, or clipboard clipboards
+(s)elect ... toggles fixation of the entry (fixated entries marked with *, enforced on clipboard change)
 (fF)lip  ... the layout
 (w)rap  ... wraps the lines
 (p)ause ... pauses the clipboard scanning, continues with p
+(t)oggle ... toggles primary <-> clipboard
 ```
 
 - **Other Controls:**
@@ -95,11 +101,16 @@
 ```plaintext
 Esc    ... discard status messages
 Esc    ... stop regex editing
-Tab    ... switch windows
+Tab    ... switch focus between entry list and detail view
 (q)uit ... exits a screen
 e(x)it ... exits the program
 Ctrl-C ... exits the program
 ```
+
+## URLs
+
+- <https://crates.io/crates/clipboardstealer>
+- <https://github.com/schwidom/clipboardstealer>
 
 ## Copyright
 
