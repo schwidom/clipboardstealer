@@ -206,7 +206,7 @@ impl TicksThread {
 
     ass.sender.send(MyEvent::Tick).unwrap();
 
-    thread::sleep(Duration::from_millis(300));
+    thread::sleep(Duration::from_millis(200));
    }
   });
   thread
@@ -226,18 +226,18 @@ impl ClipboardThread {
   Self { cbtype, echofree }
  }
 
- fn getCrw(&self) -> ClipboardReaderWriter {
+ fn get_crw(&self) -> ClipboardReaderWriter {
   ClipboardReaderWriter::from_cbtype_with_echofree(&self.cbtype, Arc::clone(&self.echofree))
    .unwrap()
  }
 
- fn refresh_asr(
+ fn refresh_nonblocking(
   &self,
   asr: &AppStateReceiver,
   // cfmap: &HashMap<CBType, ClipboardFixation>,
  ) {
   let cbtype = self.cbtype.clone();
-  let crw = self.getCrw();
+  let crw = self.get_crw();
 
   {
    {
@@ -264,13 +264,13 @@ impl ClipboardThread {
    }
   }
  }
- fn refresh(
+ fn refresh_blocking(
   &self,
   ass: &'static AppStateSender,
   // cfmap: &HashMap<CBType, ClipboardFixation>,
  ) {
   let cbtype = self.cbtype.clone();
-  let crw = self.getCrw();
+  let crw = self.get_crw();
 
   {
    {
@@ -305,7 +305,7 @@ impl ClipboardThread {
   // let (cbtype, crw) = (self.cbtype, self.crw).clone();
   // let selfclone = self.clone();
   let cbtype = self.cbtype.clone();
-  let crw = self.getCrw();
+  let crw = self.get_crw();
 
   let thread: JoinHandle<_> = thread::spawn(move || -> Result<(), CbsError> {
    {
@@ -804,6 +804,8 @@ impl<'a> AppStateReceiver<'a> {
 
   impl EventState {
    fn update_clipboard(&mut self, cbs: &mut Clipboards) {
+    // WEITERBEI
+    // geht nicht ohne, muss nur verbessert werden
     if !self.mouse_button_1_is_pressed && !self.shift_is_pressed {
      if let Some((atom, string)) = &self.cb_changed {
       cbs.insert(atom, string.clone());
@@ -950,12 +952,32 @@ impl<'a> AppStateReceiver<'a> {
       // MyEvent::SignalHook(_) => todo!(),
       MyEvent::MouseButton1(pressed) => {
        event_state.mouse_button_1_is_pressed = pressed;
+       // it can happen that a mouse press is needed to trigger a copy action
+       // so that the clipboard action of the system and the mouseclick seems to become a race
+       // in 99% if the cases it don't play a role because the order doesn't matter
+       // but when in the same time of the clipboardstealer
+       // the xfce4 clipman is running and the selection is made in the "Continue" pane of vscodium
+       // then anything happens which causes the clipboardstealer not to get the new clipboard content
+       // to mitigate the bug I reread all clipboards after releasing the left mouse key and the shift key
+
+       if !pressed {
+        for cbtype in all::<CBType>() {
+         let ct = ClipboardThread::new(cbtype, &self.data.cbs.cfmap);
+         ct.refresh_nonblocking(self);
+        }
+       }
        event_state.update_clipboard(&mut self.data.cbs);
        self.data.sender.send(MyEvent::CbInserted);
       }
 
       MyEvent::Shift(pressed) => {
        event_state.shift_is_pressed = pressed;
+       if !pressed {
+        for cbtype in all::<CBType>() {
+         let ct = ClipboardThread::new(cbtype, &self.data.cbs.cfmap);
+         ct.refresh_nonblocking(self);
+        }
+       }
        event_state.update_clipboard(&mut self.data.cbs);
        self.data.sender.send(MyEvent::CbInserted);
       }
@@ -1010,7 +1032,7 @@ impl<'a> AppStateReceiver<'a> {
     // ct.refresh(&appstate.ass);
     // ct.refresh(&self.data.sender);
     // ct.refresh(&self.data.ass.sender);
-    ct.refresh_asr(self);
+    ct.refresh_nonblocking(self);
    }
    self.data.cbs.refresh_fixation();
   }
@@ -1247,7 +1269,7 @@ pub fn main() {
 
  for cbtype in all::<CBType>() {
   let ct = ClipboardThread::new(cbtype, &appstate.asr.data.cbs.cfmap);
-  ct.refresh(&appstate.ass);
+  ct.refresh_blocking(&appstate.ass);
   let _ctjh = ct.run(&appstate.ass);
  }
 
