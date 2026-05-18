@@ -531,17 +531,20 @@ pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
 
   if name != "default" {
    let tc = brighten_tc_for_daylight(tc);
-   ret.insert(name + "_dl", tc);
+   ret.insert(tc.name.clone(), tc);
   }
  }
  ret
 }
 
 fn brighten_tc_for_daylight(mut tc: ThemeColors) -> ThemeColors {
+ tc.name.push_str("_dl");
  tc.menu = brighten_for_daylight(tc.menu);
  tc.line_number = brighten_for_daylight(tc.line_number);
  tc.text = brighten_for_daylight(tc.text);
  tc.window_fg = brighten_for_daylight(tc.window_fg);
+ tc.border = brighten_for_daylight(tc.border);
+ tc.border_inactive = brighten_for_daylight(tc.border_inactive);
  tc
 }
 

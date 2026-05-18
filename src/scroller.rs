@@ -1,6 +1,6 @@
 use std::{
  cmp::{max, min},
- ops::{Deref, DerefMut, Range},
+ ops::Range,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +10,7 @@ pub(crate) struct Scroller {
 
  windowposition: usize,
  /// can change when the contentlength changes or when the windowlength changes
- cursor: Option<usize>, // NOTE: u16 would be enough but lesser casting operations
+ cursor_in_window: Option<usize>, // NOTE: u16 would be enough but lesser casting operations
  /// can be freely defined
  contentlength: usize,
 
@@ -20,7 +20,7 @@ pub(crate) struct Scroller {
 }
 
 // constraints:
-// windowlength >= 0
+// windowlength >= 0/
 // cursor < windowlength (or None)
 
 // gtewxxi8oh
@@ -36,7 +36,7 @@ impl Scroller {
   Self {
    windowlength: 0,
    windowposition: 0,
-   cursor: None,
+   cursor_in_window: None,
    contentlength: 0,
    hoffset: 0,
    hwindowlength: 80, // WARN: ???
@@ -66,7 +66,7 @@ impl Scroller {
 
  // TODO : umbenennen in get_cursor_in_content
  pub(crate) fn get_cursor_in_content_array(&self) -> Option<usize> {
-  match self.cursor {
+  match self.cursor_in_window {
    None => None,
    Some(cursor) => {
     let res = self.windowposition + cursor;
@@ -88,21 +88,21 @@ impl Scroller {
    (Some(_), None) => {}
    (Some(cia), Some(cl)) => {
     if 0 == cl {
-     self.cursor = None;
+     self.cursor_in_window = None;
      return false;
     }
     // assert!(cia <= cl); // can crash when regexes reduce the list gtewxxi8oh
     if cia + 1 == cl {
-     self.cursor = None;
+     self.cursor_in_window = None;
      return false;
     }
    }
   }
 
-  match self.cursor {
+  match self.cursor_in_window {
    None => {
     if self.windowlength > 0 {
-     self.cursor = Some(0);
+     self.cursor_in_window = Some(0);
      self.windowposition = 0;
     }
     false
@@ -110,7 +110,7 @@ impl Scroller {
    Some(value) => {
     let newcursor = value + 1;
     if newcursor < self.windowlength {
-     self.cursor = Some(newcursor);
+     self.cursor_in_window = Some(newcursor);
      return true;
     } else if self.windowposition < usize::MAX {
      self.windowposition += 1;
@@ -123,32 +123,32 @@ impl Scroller {
 
  pub(crate) fn cursor_home(&mut self) {
   if self.windowlength == 0 {
-   self.cursor = None;
+   self.cursor_in_window = None;
   } else if self.contentlength == 0 {
-   self.cursor = None;
+   self.cursor_in_window = None;
   } else {
-   self.cursor = Some(0);
+   self.cursor_in_window = Some(0);
   }
   self.windowposition = 0;
  }
 
  pub(crate) fn cursor_end(&mut self) {
   if self.windowlength == 0 {
-   self.cursor = None;
+   self.cursor_in_window = None;
   } else if self.contentlength == 0 {
-   self.cursor = None;
+   self.cursor_in_window = None;
   } else {
    let cl = self.contentlength;
    {
     // izm8emilxi
     {
      if self.windowlength <= cl {
-      self.cursor = Some(self.windowlength - 1);
+      self.cursor_in_window = Some(self.windowlength - 1);
       self.windowposition = cl - self.windowlength;
      } else {
       self.windowposition = 0;
       assert!((cl - 1) <= u16::MAX as usize);
-      self.cursor = Some(cl - 1);
+      self.cursor_in_window = Some(cl - 1);
      }
     }
    }
@@ -167,18 +167,18 @@ impl Scroller {
    (Some(_), None) => {}
    (Some(cia), Some(cl)) => {
     if 0 == cl {
-     self.cursor = None;
+     self.cursor_in_window = None;
      return false;
     }
     // assert!(cia <= cl); // can crash when regexes reduce the list gtewxxi8oh
     if cia == 0 {
-     self.cursor = None;
+     self.cursor_in_window = None;
      return false;
     }
    }
   }
 
-  match self.cursor {
+  match self.cursor_in_window {
    None => {
     if self.windowlength > 0 {
      // self.cursor = Some(self.windowlength - 1);
@@ -188,12 +188,12 @@ impl Scroller {
       // izm8emilxi
       {
        if self.windowlength <= cl {
-        self.cursor = Some(self.windowlength - 1);
+        self.cursor_in_window = Some(self.windowlength - 1);
         self.windowposition = cl - self.windowlength;
        } else {
         self.windowposition = 0;
         assert!((cl - 1) <= u16::MAX as usize);
-        self.cursor = Some(cl - 1);
+        self.cursor_in_window = Some(cl - 1);
        }
       }
      }
@@ -208,7 +208,7 @@ impl Scroller {
      }
      false
     } else {
-     self.cursor = Some(value - 1);
+     self.cursor_in_window = Some(value - 1);
      true
     }
    }
@@ -242,22 +242,64 @@ impl Scroller {
  }
 
  fn cursorfix(&mut self) {
-  if let Some(cursor) = self.cursor {
+  if let Some(cursor_in_window) = self.cursor_in_window {
    // let limit = min(self.windowlength, self.contentlength - self.windowposition);
-   let limit = min(self.windowlength, self.contentlength.saturating_sub(self.windowposition));
-   if cursor >= limit {
-    if limit > 0 {
-     self.cursor = Some(limit - 1);
-    } else {
-     self.cursor = None;
+   if false {
+    // old variant
+    let limit = min(self.windowlength, self.contentlength.saturating_sub(self.windowposition));
+    if cursor_in_window >= limit {
+     if limit > 0 {
+      self.cursor_in_window = Some(limit - 1);
+     } else {
+      self.cursor_in_window = None;
+     }
     }
+   } else {
+    if let Some(cursor_in_window) = self.cursor_in_window {
+     let rest_windowlength = self.contentlength.saturating_sub(self.windowposition);
+     match (cursor_in_window >= self.windowlength, cursor_in_window >= rest_windowlength) {
+      (false, false) => {}
+      (_, true) => {
+       self.cursor_in_window = match rest_windowlength {
+        0 => None,
+        _ => Some(rest_windowlength - 1),
+       };
+      }
+      (true, false) => {
+       let diff = cursor_in_window - self.windowlength + 1;
+       // panic!("{:?}", (cursor_in_window, self.windowlength, diff));
+       self.windowposition += diff;
+       self.cursor_in_window = Some(cursor_in_window - diff);
+      }
+     }
+    }
+
+    // cursor_in_window >= self.windowlength
+    // cursor_in_window >= self.contentlength.saturating_sub(self.windowposition)
+    // cursor_in_window + self.windowposition >= self.contentlength
+
+    // if cursor_in_window >= limit {
+    //  if cursor_in_window + self.windowposition >= self.contentlength {
+    //   self.cursor_in_window = match limit {
+    //    0 => None,
+    //    _ => Some(limit - 1),
+    //   };
+    //  } else {
+    //   self.cursor_in_window = match limit {
+    //    0 => None,
+    //    _ => {
+
+    //    }
+    //   };
+    //  }
+    // }
    }
   }
  }
 
  pub(crate) fn set_windowlength(&mut self, len: usize) {
   if len == 0 {
-   self.cursor = None;
+   self.cursor_in_window = None;
   }
   if self.windowlength == len {
    return;
@@ -282,7 +324,7 @@ impl Scroller {
   self.windowlength
  }
  pub(crate) fn get_cursor_in_window(&self) -> Option<usize> {
-  self.cursor
+  self.cursor_in_window
  }
 
  pub(crate) fn set_hwindowlength(&mut self, len: usize) {
@@ -349,7 +391,7 @@ pub(crate) enum CursorRepetitions {
 mod tests {
  use std::ops::{Deref, DerefMut};
 
- use crate::scroller::{CursorRepetitions, Scroller, WrapScroller};
+ use crate::scroller::{CursorRepetitions, Scroller};
 
  #[test]
  fn scroller_new_001() {
@@ -657,16 +699,31 @@ mod tests {
  }
 
  #[test]
- fn test_subscroller_002() {
+ fn test_window_resizing_001() {
   // basics
   // let mut s = Scroller::new();
-  let mut ws = WrapScroller::default();
+  let mut s = Scroller::default();
 
-  ws.set_content_length(4);
-  ws.set_windowlength(2);
-  assert_eq!(ws.get_cursor_in_window(), None);
-  assert_eq!(ws.get_cursor_in_content_array(), None);
-  assert_eq!(ws.get_windowposition(), 0);
+  s.set_content_length(4);
+  s.set_windowlength(4);
+  assert_eq!(s.get_cursor_in_window(), None);
+  assert_eq!(s.get_cursor_in_content_array(), None);
+  assert_eq!(s.get_windowposition(), 0);
+
+  s.cursor_increase();
+  s.cursor_increase();
+  s.cursor_increase();
+  s.cursor_increase();
+
+  assert_eq!(0, s.get_windowposition());
+  assert_eq!(Some(3), s.get_cursor_in_window());
+  assert_eq!(Some(3), s.get_cursor_in_content_array());
+
+  s.set_windowlength(2);
+
+  assert_eq!(2, s.get_windowposition());
+  assert_eq!(Some(1), s.get_cursor_in_window());
+  assert_eq!(Some(3), s.get_cursor_in_content_array());
  }
 
  #[test]
@@ -700,10 +757,13 @@ mod tests {
   // Simulation des Ablaufs:
   assert_eq!((2, 0, Some(1), Some(1)), progress());
   assert_eq!((2, 1, Some(2), Some(1)), progress());
-  assert_eq!((1, 2, Some(2), Some(0)), progress());
-  assert_eq!((2, 2, Some(3), Some(1)), progress());
+  // assert_eq!((1, 2, Some(2), Some(0)), progress());
+  assert_eq!((1, 3, Some(3), Some(0)), progress());
+  // assert_eq!((2, 2, Some(3), Some(1)), progress());
   assert_eq!((2, 3, Some(4), Some(1)), progress());
+  // assert_eq!((2, 3, Some(4), Some(1)), progress());
   assert_eq!((2, 3, None, None), progress());
+  // assert_eq!((2, 3, None, None), progress());
   assert_eq!((2, 0, Some(0), Some(0)), progress());
  }
 
@@ -726,26 +786,5 @@ mod tests {
   assert_eq!(Scroller::wrapped_window_length(9, &[3, 3, 3, 3, 3]), 3);
   assert_eq!(Scroller::wrapped_window_length(9, &[1, 3, 5, 3, 3]), 3);
   assert_eq!(Scroller::wrapped_window_length(9, &[5, 3, 1, 3, 3]), 3);
- }
-}
-
-#[derive(Default)]
-pub(crate) struct WrapScroller {
- pub(crate) s: Scroller,
- /// subscroller
- pub(crate) sub: Scroller,
-}
-
-impl Deref for WrapScroller {
- type Target = Scroller;
-
- fn deref(&self) -> &Self::Target {
-  &self.s
- }
-}
-
-impl DerefMut for WrapScroller {
- fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
-  &mut self.s
  }
 }

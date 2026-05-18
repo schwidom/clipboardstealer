@@ -63,15 +63,50 @@ impl ScreenColorThemeChooser {
    .map(|x| (x.key().clone(), x.value().clone()))
    .collect::<Vec<_>>();
 
-  Self {
+  let mut self_ret = Self {
    config,
    scroller: Scroller::new(),
    themes,
-  }
+  };
+
+  self_ret.setup();
+
+  self_ret
  }
 
  pub(crate) fn total_entries(&self) -> usize {
   self.config.all_color_themes.len()
+ }
+
+ fn setup(&mut self) {
+  let total = self.total_entries();
+
+  self.scroller.set_content_length(total);
+  self
+   .scroller
+   .set_windowlength(10); // NOTE when this is 0 the while loop never exits
+
+  let theme_colors = self.config.color_theme.get_or_default();
+  let current_theme_name = theme_colors.name.clone();
+
+  let mut chosen_idx: Option<usize> = None;
+
+  self.themes.iter().enumerate().find(|x| {
+   let (idx, (name, _)) = x;
+   if name == &current_theme_name {
+    chosen_idx = Some(*idx);
+    true
+   } else {
+    false
+   }
+  });
+
+  if let Some(position) = chosen_idx {
+   // the position has always a valid value, while always exits
+   while self.scroller.get_cursor_in_content_array() != Some(position) {
+    self.scroller.cursor_increase();
+   }
+  }
  }
 }
 
