@@ -123,7 +123,7 @@ impl ScreenPainter for ScreenColorThemeChooser {
     let swatches = vec![
      Span {
       style: Style::new(),
-      content: format!(" {:15}", name).into(),
+      content: format!(" {:20}", name).into(),
      },
      swatch(tc.window_bg),
      swatch(tc.window_fg),

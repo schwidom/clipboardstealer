@@ -1,6 +1,7 @@
 use crossbeam_skiplist::SkipMap;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
+use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -173,6 +174,18 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    menu: Some(Color::Rgb(0x43, 0x4C, 0x5E)),
   },
   ThemeColors {
+   name: "nord_bright".into(),
+   window_bg: Some(Color::Rgb(0x3A, 0x42, 0x50)), // brighter than 0x29,0x2E,0x3A
+   window_fg: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
+   cursor: Some(Color::Rgb(0xBF, 0x61, 0x6A)),
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x5A, 0x63, 0x78)), // brighter than 0x4C,0x56,0x6A
+   text: Some(Color::Rgb(0xD8, 0xDE, 0xE9)),
+   border: Some(Color::Rgb(0x81, 0xA1, 0xC1)),
+   border_inactive: Some(Color::Rgb(0x5A, 0x63, 0x78)), // match line_number brightness
+   menu: Some(Color::Rgb(0x52, 0x5C, 0x70)),            // brighter than 0x43,0x4C,0x5E
+  },
+  ThemeColors {
    name: "solarized".into(),
    window_bg: Some(Color::Rgb(0x00, 0x24, 0x2F)),
    window_fg: Some(Color::Rgb(0x83, 0x94, 0x96)),
@@ -184,6 +197,18 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border_inactive: Some(Color::Rgb(0x58, 0x6E, 0x75)),
    // menu: Some(Color::Rgb(0x0F, 0x42, 0x51)),
    menu: Some(Color::Rgb(0x12, 0x4f, 0x61)),
+  },
+  ThemeColors {
+   name: "solarized_bright".into(),
+   window_bg: Some(Color::Rgb(0x02, 0x38, 0x47)), // slightly brighter than 0x00,0x24,0x2F
+   window_fg: Some(Color::Rgb(0x83, 0x94, 0x96)),
+   cursor: Some(Color::Rgb(0xB5, 0x89, 0x00)),
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x66, 0x7C, 0x83)), // brighter than 0x58,0x6E,0x75
+   text: Some(Color::Rgb(0x83, 0x94, 0x96)),
+   border: Some(Color::Rgb(0x3A, 0x9F, 0xE0)), // a touch brighter than 0x26,0x8B,0xD2
+   border_inactive: Some(Color::Rgb(0x66, 0x7C, 0x83)), // match line_number brightness
+   menu: Some(Color::Rgb(0x1E, 0x61, 0x74)),   // brighter than 0x12,0x4F,0x61
   },
   ThemeColors {
    name: "dracula".into(),
@@ -213,6 +238,18 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    menu: Some(Color::Rgb(0x5a, 0x54, 0x51)),
   },
   ThemeColors {
+   name: "gruvbox_bright".into(),
+   window_bg: Some(Color::Rgb(0x27, 0x2A, 0x2B)), // slightly lighter than 0x1D,0x20,0x21
+   window_fg: Some(Color::Rgb(0xEB, 0xDB, 0xB2)),
+   cursor: Some(Color::Rgb(0xFB, 0x49, 0x34)),
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x7A, 0x66, 0x5B)), // brighter than 0x66,0x55,0x4B
+   text: Some(Color::Rgb(0xEB, 0xDB, 0xB2)),
+   border: Some(Color::Rgb(0xFE, 0x86, 0x29)),
+   border_inactive: Some(Color::Rgb(0x7A, 0x66, 0x5B)), // match line_number
+   menu: Some(Color::Rgb(0x66, 0x5F, 0x5C)),            // brighter than 0x5A,0x54,0x51
+  },
+  ThemeColors {
    name: "monokai".into(),
    window_bg: Some(Color::Rgb(0x27, 0x28, 0x22)),
    window_fg: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
@@ -224,6 +261,18 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border_inactive: Some(Color::Rgb(0x58, 0x5E, 0x5E)),
    // menu: Some(Color::Rgb(0x3B, 0x3C, 0x34)),
    menu: Some(Color::Rgb(0x58, 0x5a, 0x4e)),
+  },
+  ThemeColors {
+   name: "monokai_bright".into(),
+   window_bg: Some(Color::Rgb(0x32, 0x33, 0x2B)), // brighter than 0x27,0x28,0x22
+   window_fg: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
+   cursor: Some(Color::Rgb(0xF9, 0x26, 0x72)),
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x69, 0x70, 0x70)), // brighter than 0x58,0x5E,0x5E
+   text: Some(Color::Rgb(0xF8, 0xF8, 0xF2)),
+   border: Some(Color::Rgb(0xA6, 0xE2, 0x2E)),
+   border_inactive: Some(Color::Rgb(0x69, 0x70, 0x70)), // match line_number brightness
+   menu: Some(Color::Rgb(0x69, 0x6B, 0x60)),            // brighter than 0x58,0x5A,0x4E
   },
   ThemeColors {
    name: "onedark".into(),
@@ -239,6 +288,19 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    menu: Some(Color::Rgb(0x5d, 0x66, 0x7b)),
   },
   ThemeColors {
+   name: "onedark_bright".into(),
+   window_bg: Some(Color::Rgb(0x4C, 0x56, 0x64)), // Lighter background
+   window_fg: Some(Color::Rgb(0xD0, 0xD5, 0xDF)), // Brighter foreground
+   cursor: Some(Color::Rgb(0xF5, 0xB0, 0x5E)),    // Brighter cursor
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x6B, 0x72, 0x81)), // Lighter line numbers
+   text: Some(Color::Rgb(0xD0, 0xD5, 0xDF)),        // Brighter text
+   border: Some(Color::Rgb(0x89, 0xC4, 0xF3)),      // Brighter border
+   border_inactive: Some(Color::Rgb(0x6B, 0x72, 0x81)),
+   // menu: Some(Color::Rgb(0x7A, 0x8A, 0x97)),
+   menu: Some(Color::Rgb(0x7A, 0x8A, 0x97)), // Brighter menu
+  },
+  ThemeColors {
    name: "catppuccin".into(),
    window_bg: Some(Color::Rgb(0x1E, 0x1E, 0x2E)),
    window_fg: Some(Color::Rgb(0xCD, 0xD6, 0xF4)),
@@ -252,6 +314,19 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    menu: Some(Color::Rgb(0x49, 0x49, 0x5e)),
   },
   ThemeColors {
+   name: "catppuccin_bright".into(),
+   window_bg: Some(Color::Rgb(0x3A, 0x3A, 0x4A)), // Lighter background
+   window_fg: Some(Color::Rgb(0xE6, 0xE9, 0xFF)), // Brighter foreground
+   cursor: Some(Color::Rgb(0xF5, 0xC2, 0xE7)),    // Keep original cursor color for contrast
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x66, 0x66, 0x6A)), // Brighter line numbers
+   text: Some(Color::Rgb(0xE6, 0xE9, 0xFF)),        // Brighter text
+   border: Some(Color::Rgb(0xA0, 0xBA, 0xFC)),      // Brighter border
+   border_inactive: Some(Color::Rgb(0x66, 0x66, 0x6A)),
+   // menu: Some(Color::Rgb(0x4A, 0x4A, 0x5F)),
+   menu: Some(Color::Rgb(0x60, 0x60, 0x70)), // Brighter menu
+  },
+  ThemeColors {
    name: "tokyonight".into(),
    window_bg: Some(Color::Rgb(0x1A, 0x1B, 0x26)),
    window_fg: Some(Color::Rgb(0xA9, 0xB1, 0xD6)),
@@ -262,6 +337,18 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border: Some(Color::Rgb(0x7A, 0xA2, 0xE3)),
    border_inactive: Some(Color::Rgb(0x36, 0x43, 0x56)),
    menu: Some(Color::Rgb(0x44, 0x45, 0x53)),
+  },
+  ThemeColors {
+   name: "tokyonight_bright".into(),
+   window_bg: Some(Color::Rgb(0x3C, 0x3D, 0x4A)), // Brighter background
+   window_fg: Some(Color::Rgb(0xC0, 0xC5, 0xD8)), // Brighter foreground
+   cursor: Some(Color::Rgb(0xD8, 0xB0, 0xF7)),    // Slightly brighter cursor
+   cursor_inactive: None,
+   line_number: Some(Color::Rgb(0x4A, 0x55, 0x60)), // Brighter line numbers
+   text: Some(Color::Rgb(0xC0, 0xC5, 0xD8)),        // Brighter text
+   border: Some(Color::Rgb(0x89, 0xB0, 0xF0)),      // Brighter border
+   border_inactive: Some(Color::Rgb(0x4A, 0x55, 0x60)),
+   menu: Some(Color::Rgb(0x58, 0x59, 0x66)), // Brighter menu
   },
   ThemeColors {
    name: "ayu".into(),
@@ -433,16 +520,51 @@ fn create_theme_colors() -> Vec<ThemeColors> {
 
 pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
  let ret = SkipMap::<String, ThemeColors>::default();
- for i in create_theme_colors().iter() {
-  let name = i.name.clone();
-  let mut i = i.clone();
-  if i.cursor_inactive.is_none() && i.cursor.is_some() {
-   i.cursor_inactive = dim_color(i.cursor)
+ for tc in create_theme_colors().iter() {
+  let name = tc.name.clone();
+  let mut tc = tc.clone();
+  if tc.cursor_inactive.is_none() && tc.cursor.is_some() {
+   tc.cursor_inactive = dim_color(tc.cursor)
   }
 
-  ret.insert(name, i.clone());
+  ret.insert(name.clone(), tc.clone());
+
+  if name != "default" {
+   let tc = brighten_tc_for_daylight(tc);
+   ret.insert(name + "_dl", tc);
+  }
  }
  ret
+}
+
+fn brighten_tc_for_daylight(mut tc: ThemeColors) -> ThemeColors {
+ tc.menu = brighten_for_daylight(tc.menu);
+ tc.line_number = brighten_for_daylight(tc.line_number);
+ tc.text = brighten_for_daylight(tc.text);
+ tc.window_fg = brighten_for_daylight(tc.window_fg);
+ tc
+}
+
+fn brighten_for_daylight(color: Option<Color>) -> Option<Color> {
+ color.map(|mut x: Color| {
+  const THRESHOLD: u8 = 175;
+  if let Color::Rgb(r, g, b) = x {
+   // ratatui provides no conversion from the enum to u8 u8 u8 for all enums
+   let rgb_max = max(max(r, g), b);
+   if rgb_max == 0 {
+   } else if rgb_max < THRESHOLD {
+    let r = r as f32;
+    let g = g as f32;
+    let b = b as f32;
+    let f = THRESHOLD as f32 / rgb_max as f32;
+    let r = (f * r).min(255.) as u8;
+    let g = (f * g).min(255.) as u8;
+    let b = (f * b).min(255.) as u8;
+    x = Color::Rgb(r, g, b);
+   }
+  }
+  x
+ })
 }
 
 pub(crate) fn default_color_theme_name() -> String {
