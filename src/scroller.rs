@@ -243,33 +243,19 @@ impl Scroller {
 
  fn cursorfix(&mut self) {
   if let Some(cursor_in_window) = self.cursor_in_window {
-   // let limit = min(self.windowlength, self.contentlength - self.windowposition);
-   if false {
-    // old variant
-    let limit = min(self.windowlength, self.contentlength.saturating_sub(self.windowposition));
-    if cursor_in_window >= limit {
-     if limit > 0 {
-      self.cursor_in_window = Some(limit - 1);
-     } else {
-      self.cursor_in_window = None;
-     }
+   let rest_windowlength = self.contentlength.saturating_sub(self.windowposition);
+   match (cursor_in_window >= self.windowlength, cursor_in_window >= rest_windowlength) {
+    (false, false) => {}
+    (_, true) => {
+     self.cursor_in_window = match rest_windowlength {
+      0 => None,
+      _ => Some(rest_windowlength - 1),
+     };
     }
-   } else if let Some(cursor_in_window) = self.cursor_in_window {
-    let rest_windowlength = self.contentlength.saturating_sub(self.windowposition);
-    match (cursor_in_window >= self.windowlength, cursor_in_window >= rest_windowlength) {
-     (false, false) => {}
-     (_, true) => {
-      self.cursor_in_window = match rest_windowlength {
-       0 => None,
-       _ => Some(rest_windowlength - 1),
-      };
-     }
-     (true, false) => {
-      let diff = cursor_in_window - self.windowlength + 1;
-      // panic!("{:?}", (cursor_in_window, self.windowlength, diff));
-      self.windowposition += diff;
-      self.cursor_in_window = Some(cursor_in_window - diff);
-     }
+    (true, false) => {
+     let diff = cursor_in_window - self.windowlength + 1;
+     self.windowposition += diff;
+     self.cursor_in_window = Some(cursor_in_window - diff);
     }
    }
   }
