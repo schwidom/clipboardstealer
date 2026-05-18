@@ -254,45 +254,23 @@ impl Scroller {
       self.cursor_in_window = None;
      }
     }
-   } else {
-    if let Some(cursor_in_window) = self.cursor_in_window {
-     let rest_windowlength = self.contentlength.saturating_sub(self.windowposition);
-     match (cursor_in_window >= self.windowlength, cursor_in_window >= rest_windowlength) {
-      (false, false) => {}
-      (_, true) => {
-       self.cursor_in_window = match rest_windowlength {
-        0 => None,
-        _ => Some(rest_windowlength - 1),
-       };
-      }
-      (true, false) => {
-       let diff = cursor_in_window - self.windowlength + 1;
-       // panic!("{:?}", (cursor_in_window, self.windowlength, diff));
-       self.windowposition += diff;
-       self.cursor_in_window = Some(cursor_in_window - diff);
-      }
+   } else if let Some(cursor_in_window) = self.cursor_in_window {
+    let rest_windowlength = self.contentlength.saturating_sub(self.windowposition);
+    match (cursor_in_window >= self.windowlength, cursor_in_window >= rest_windowlength) {
+     (false, false) => {}
+     (_, true) => {
+      self.cursor_in_window = match rest_windowlength {
+       0 => None,
+       _ => Some(rest_windowlength - 1),
+      };
+     }
+     (true, false) => {
+      let diff = cursor_in_window - self.windowlength + 1;
+      // panic!("{:?}", (cursor_in_window, self.windowlength, diff));
+      self.windowposition += diff;
+      self.cursor_in_window = Some(cursor_in_window - diff);
      }
     }
-
-    // cursor_in_window >= self.windowlength
-    // cursor_in_window >= self.contentlength.saturating_sub(self.windowposition)
-    // cursor_in_window + self.windowposition >= self.contentlength
-
-    // if cursor_in_window >= limit {
-    //  if cursor_in_window + self.windowposition >= self.contentlength {
-    //   self.cursor_in_window = match limit {
-    //    0 => None,
-    //    _ => Some(limit - 1),
-    //   };
-    //  } else {
-    //   self.cursor_in_window = match limit {
-    //    0 => None,
-    //    _ => {
-
-    //    }
-    //   };
-    //  }
-    // }
    }
   }
  }
