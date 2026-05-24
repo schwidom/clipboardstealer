@@ -164,6 +164,12 @@ impl ThemeColors {
 }
 
 const COLOR_RED: Color = Color::Rgb(0xff, 0, 0);
+const COLOR_GREEN: Color = Color::Rgb(0, 0xff, 0);
+#[allow(unused)]
+const COLOR_BLUE: Color = Color::Rgb(0, 0, 0xff);
+const COLOR_BRIGHT_BLUE: Color = Color::Rgb(0x7f, 0x7f, 0xff);
+const COLOR_CYAN: Color = Color::Rgb(0, 0xff, 0xff);
+const COLOR_YELLOW: Color = Color::Rgb(0xff, 0xff, 0);
 
 fn create_theme_colors() -> Vec<ThemeColors> {
  vec![
@@ -248,7 +254,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    // menu: Some(Color::Rgb(0x3C, 0x38, 0x36)),
    // menu: Some(Color::Rgb(0x54, 0x4e, 0x4b)),
    menu: Some(Color::Rgb(0x5a, 0x54, 0x51)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_GREEN),
   },
   ThemeColors {
    name: "gruvbox_bright".into(),
@@ -261,7 +267,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border: Some(Color::Rgb(0xFE, 0x86, 0x29)),
    border_inactive: Some(Color::Rgb(0x7A, 0x66, 0x5B)), // match line_number
    menu: Some(Color::Rgb(0x66, 0x5F, 0x5C)),            // brighter than 0x5A,0x54,0x51
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_GREEN),
   },
   ThemeColors {
    name: "monokai".into(),
@@ -275,7 +281,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border_inactive: Some(Color::Rgb(0x58, 0x5E, 0x5E)),
    // menu: Some(Color::Rgb(0x3B, 0x3C, 0x34)),
    menu: Some(Color::Rgb(0x58, 0x5a, 0x4e)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_BRIGHT_BLUE),
   },
   ThemeColors {
    name: "monokai_bright".into(),
@@ -288,7 +294,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border: Some(Color::Rgb(0xA6, 0xE2, 0x2E)),
    border_inactive: Some(Color::Rgb(0x69, 0x70, 0x70)), // match line_number brightness
    menu: Some(Color::Rgb(0x69, 0x6B, 0x60)),            // brighter than 0x58,0x5A,0x4E
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_BRIGHT_BLUE),
   },
   ThemeColors {
    name: "onedark".into(),
@@ -453,7 +459,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border_inactive: Some(Color::Rgb(0x1C, 0x2D, 0x42)),
    // menu: Some(Color::Rgb(0x30, 0x44, 0x58)),
    menu: Some(Color::Rgb(0x48, 0x66, 0x84)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_GREEN),
   },
   ThemeColors {
    name: "vscodium".into(),
@@ -507,7 +513,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border: Some(Color::Rgb(0x00, 0xD8, 0xFF)),
    border_inactive: Some(Color::Rgb(0x52, 0x33, 0x66)),
    menu: Some(Color::Rgb(0x4A, 0x38, 0x5C)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_YELLOW),
   },
   ThemeColors {
    name: "cyberpunk".into(),
@@ -522,7 +528,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border_inactive: Some(Color::Rgb(0x2E, 0x24, 0x3A)),
    // menu: Some(Color::Rgb(0x38, 0x32, 0x48)),
    menu: Some(Color::Rgb(0x54, 0x4b, 0x6c)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_YELLOW),
   },
   ThemeColors {
    name: "argonaut".into(),
@@ -548,7 +554,7 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    border: Some(Color::Rgb(0xDA, 0x6F, 0x7C)),
    border_inactive: Some(Color::Rgb(0x52, 0x34, 0x36)),
    menu: Some(Color::Rgb(0x56, 0x46, 0x46)),
-   pause: Some(COLOR_RED),
+   pause: Some(COLOR_CYAN),
   },
  ]
 }

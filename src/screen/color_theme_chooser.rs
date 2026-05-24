@@ -167,6 +167,8 @@ impl ScreenPainter for ScreenColorThemeChooser {
      swatch(tc.border),
      swatch(tc.border_inactive),
      swatch(tc.menu),
+     Span::from("          "),
+     swatch(tc.pause),
     ];
 
     lines.push(LineStrings {
