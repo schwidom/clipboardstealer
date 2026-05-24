@@ -26,10 +26,12 @@ use ratatui::{
 };
 
 use unicode_width::UnicodeWidthChar; // extends char by width, width_cjk
-use unicode_width::UnicodeWidthStr; // extends &str by width, width_cjk
+use unicode_width::UnicodeWidthStr;
+// use x11rb_protocol::protocol::render::Color; // extends &str by width, width_cjk
 
 use std::fmt::Debug;
 // write_all
+// use ratatui::style::Color as RatatuiColor;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ActiveArea {
@@ -445,7 +447,10 @@ struct LineStrings<'a> {
  wrapped: bool,
  cursor: String,
  newest: Option<String>,
+ selection_star: Option<String>,
  line_number: String,
+ cb_type: Option<String>,
+ date_time: Option<String>,
  text: LineStringsType<'a>,
 }
 
@@ -460,7 +465,10 @@ struct LineStringsWrapped<'a> {
  wrapped: bool,
  cursor: String,
  newest: Option<String>,
+ selection_star: Option<String>,
  line_number: String,
+ cb_type: Option<String>,
+ date_time: Option<String>,
  text: LineStringsWrappedType<'a>,
 }
 
@@ -480,7 +488,10 @@ impl<'a> LineStrings<'a> {
        &(String::from("    ")
         + &self.cursor
         + &self.newest.clone().unwrap_or_default()
-        + &self.line_number),
+        + &self.selection_star.clone().unwrap_or_default()
+        + &self.line_number
+        + &self.cb_type.clone().unwrap_or_default()
+        + &self.date_time.clone().unwrap_or_default()),
        &text,
        safe_area,
        hoffset,
@@ -499,7 +510,10 @@ impl<'a> LineStrings<'a> {
    wrapped: self.wrapped,
    cursor: tabfix(&self.cursor),
    newest: self.newest.clone().map(|x| tabfix(&x)),
+   selection_star: self.selection_star.clone().map(|x| tabfix(&x)),
    line_number: tabfix(&self.line_number),
+   cb_type: self.cb_type.clone().map(|x| tabfix(&x)),
+   date_time: self.date_time.clone().map(|x| tabfix(&x)),
    // text: tabfix(&self.text),
    text: newtext2,
   }
@@ -524,19 +538,32 @@ impl<'a> LineStringsConfig<'a> {
  fn prepare2print(&self, safe_area: Rect) -> Vec<Vec<Line<'_>>>
 // fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>>
  {
-  let cursor_style = if let Some(color) = self.cursor_color {
-   Style::new().fg(color)
-  } else if let Some(color) = self.theme_colors.cursor {
-   Style::new().fg(color)
-  } else {
-   Style::new()
-  };
+  let cursor_color = self.cursor_color.or_else(|| self.theme_colors.cursor);
+
+  let cursor_style =
+   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
+
+  // TODO : color theme for selection star
+  let selection_star_style =
+   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
 
   let line_number_style = if let Some(color) = self.theme_colors.line_number {
    Style::new().fg(color)
   } else {
    Style::new()
   };
+
+  // TODO : color theme for cb_type
+  let cb_type_style =
+   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
+
+  // TODO : color theme for date_time
+  let date_time_style = if let Some(color) = self.theme_colors.line_number {
+   Style::new().fg(color)
+  } else {
+   Style::new()
+  };
+
   let text_style =
    if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
 
@@ -556,7 +583,11 @@ impl<'a> LineStringsConfig<'a> {
          &(String::new()
           + &lsw.cursor
           + &lsw.newest.clone().unwrap_or_default()
-          + &lsw.line_number),
+          + &lsw.selection_star.clone().unwrap_or_default()
+          + &lsw.line_number
+          + &lsw.cb_type.clone().unwrap_or_default()
+          + &lsw.date_time.clone().unwrap_or_default()
+          + " "),
          x,
          safe_area,
          self.hoffset,
@@ -571,7 +602,11 @@ impl<'a> LineStringsConfig<'a> {
         Line::from(vec![
          Span::styled(lsw.cursor, cursor_style),
          Span::styled(lsw.newest.unwrap_or_default(), cursor_style),
+         Span::styled(lsw.selection_star.unwrap_or_default(), selection_star_style),
          Span::styled(lsw.line_number, line_number_style),
+         Span::styled(lsw.cb_type.unwrap_or_default(), cb_type_style),
+         Span::styled(lsw.date_time.unwrap_or_default(), date_time_style),
+         Span::from(" "),
          Span::styled(res.1.clone(), text_style),
         ])
        })
@@ -669,12 +704,19 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let top_right_line_text = if self.paused { " PAUSED " } else { "" };
   let bottom_center_line_text = if self.paused { " PAUSED " } else { "" };
 
+  let pause_style = if let Some(color) = self.theme_colors.pause {
+   // Style::from(color)
+   Style::default().fg(color).bold()
+  } else {
+   Style::new()
+  };
+
   let block = self
    .all_lines
    .get_block(is_main_active)
    .title(title)
-   .title(Line::from(top_right_line_text).right_aligned())
-   .title_bottom(Line::from(bottom_center_line_text).centered());
+   .title(Line::from(Span::styled(top_right_line_text, pause_style)).right_aligned())
+   .title_bottom(Line::from(Span::styled(bottom_center_line_text, pause_style)).centered());
 
   // let rect1 = self.rv.pl.get_main_area().inner(Margin::new(0, 0));
   let rect1 = *self.rv.pl.get_main_area();

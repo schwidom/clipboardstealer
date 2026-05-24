@@ -82,6 +82,9 @@ impl ScreenPainter for ScreenMenu {
      newest: None,
      line_number: " ".to_string(),
      text: LineStringsType::S(entry.to_string()),
+     selection_star: None,
+     cb_type: None,
+     date_time: None,
     },
    );
 

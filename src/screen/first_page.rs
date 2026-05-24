@@ -530,14 +530,22 @@ impl ScreenPainter for ScreenFirstPage {
          wrapped: false,
          cursor: cursor_star.to_string(),
          newest: Some(newest_marker_star.to_string()),
+         selection_star: Some(format!(" {}", selection_star)),
          line_number: format!(
-          " {} {:width$} {} {} : ",
-          selection_star,
+          " {:width$}",
           idx + self.scroller_main.get_windowposition(), // mqbojcmkot
-          cbentry_borrowed.get_cbtype().get_info(),
-          cbentry_borrowed.get_date_time(),
-          width = numbers_width,
+          width = numbers_width
          ),
+         cb_type: Some(format!(" {}", cbentry_borrowed.get_cbtype().get_info())),
+         date_time: Some(format!(" {}", cbentry_borrowed.get_date_time())),
+         // line_number: format!(
+         //  " {} {:width$} {} {} : ",
+         //  selection_star,
+         //  idx + self.scroller_main.get_windowposition(), // mqbojcmkot
+         //  cbentry_borrowed.get_cbtype().get_info(),
+         //  cbentry_borrowed.get_date_time(),
+         //  width = numbers_width,
+         // ),
          text: LineStringsType::S(flatline(&cbentry_borrowed.as_string())),
         });
        }
@@ -552,6 +560,9 @@ impl ScreenPainter for ScreenFirstPage {
          .centerline("----- ↑ active ↑ ----- ↓ incoming ↓ -----")
          .to_string(),
         text: LineStringsType::S("".to_string()),
+        selection_star: None,
+        cb_type: None,
+        date_time: None,
        });
       }
       FilteredCbsEntry::Empty => {
@@ -562,6 +573,9 @@ impl ScreenPainter for ScreenFirstPage {
         newest: None,
         line_number: "".to_string(),
         text: LineStringsType::S("".to_string()),
+        selection_star: None,
+        cb_type: None,
+        date_time: None,
        });
       }
      }
@@ -606,6 +620,9 @@ impl ScreenPainter for ScreenFirstPage {
         newest: None,
         line_number: format!(" {:width$} : ", idx, width = numbers_width,),
         text: LineStringsType::S(entry.to_string()),
+        selection_star: None,
+        cb_type: None,
+        date_time: None,
        }
       },
      )

@@ -119,6 +119,9 @@ impl ScreenPainter for ScreenViewPage {
       newest: None,
       line_number: format!(" {:width$} : ", idx, width = numbers_width,),
       text: LineStringsType::S(entry.to_string()),
+      selection_star: None,
+      cb_type: None,
+      date_time: None,
      }
     },
    );

@@ -82,9 +82,7 @@ impl ScreenColorThemeChooser {
   let total = self.total_entries();
 
   self.scroller.set_content_length(total);
-  self
-   .scroller
-   .set_windowlength(10); // NOTE when this is 0 the while loop never exits
+  self.scroller.set_windowlength(10); // NOTE when this is 0 the while loop never exits
 
   let theme_colors = self.config.color_theme.get_or_default();
   let current_theme_name = theme_colors.name.clone();
@@ -175,7 +173,10 @@ impl ScreenPainter for ScreenColorThemeChooser {
      wrapped: false,
      cursor: cursor_star.to_string(),
      newest: None,
+     selection_star: None,
      line_number: "".to_string(),
+     cb_type: None,
+     date_time: None,
      //  text: format!("{}   {}", name, swatches),
      text: LineStringsType::L(vec![Line::default().spans(swatches)]),
     });
