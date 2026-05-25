@@ -139,7 +139,7 @@ impl ScreenPainter for ScreenViewPage {
     line_count: Some(string_lines.len()),
     hoffset: self.scroller.get_hoffset(),
     theme_colors: theme_colors.clone(),
-    cursor_color: None,
+    active_area: true,
    };
 
    {

@@ -97,7 +97,7 @@ impl ScreenPainter for ScreenMenu {
     line_count: Some(self.items.len()),
     hoffset: 0,
     theme_colors: theme_colors.clone(),
-    cursor_color: None,
+    active_area: true,
    };
 
    {

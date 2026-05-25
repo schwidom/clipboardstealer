@@ -163,10 +163,16 @@ impl ScreenPainter for ScreenColorThemeChooser {
      swatch(tc.cursor),
      swatch(tc.cursor_inactive),
      swatch(tc.line_number),
+     swatch(tc.line_number_inactive),
      swatch(tc.text),
      swatch(tc.border),
      swatch(tc.border_inactive),
      swatch(tc.menu),
+     swatch(tc.selection_star),
+     swatch(tc.cb_type),
+     swatch(tc.cb_type_inactive),
+     swatch(tc.date_time),
+     swatch(tc.date_time_inactive),
      Span::from("          "),
      swatch(tc.pause),
     ];
@@ -191,7 +197,7 @@ impl ScreenPainter for ScreenColorThemeChooser {
     line_count: Some(total),
     hoffset: 0,
     theme_colors: theme_colors.clone(),
-    cursor_color: None,
+    active_area: true,
    };
 
    {

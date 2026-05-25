@@ -529,7 +529,8 @@ struct LineStringsConfig<'a> {
  line_count: Option<usize>,
  hoffset: usize,
  theme_colors: ThemeColors,
- cursor_color: Option<ratatui::style::Color>,
+ active_area: bool,
+ // cursor_color: Option<ratatui::style::Color>,
  // scroller: Option<RefMut<'a, Scroller>>,
  // scroller: Option<&'a mut Scroller>,
 }
@@ -538,31 +539,38 @@ impl<'a> LineStringsConfig<'a> {
  fn prepare2print(&self, safe_area: Rect) -> Vec<Vec<Line<'_>>>
 // fn prepare2print(&self, safe_area: Rect) -> Vec<Line<'_>>
  {
-  let cursor_color = self.cursor_color.or_else(|| self.theme_colors.cursor);
+  let cursor_color =
+   if self.active_area { self.theme_colors.cursor } else { self.theme_colors.cursor_inactive };
 
   let cursor_style =
    if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
 
-  // TODO : color theme for selection star
-  let selection_star_style =
-   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
-
-  let line_number_style = if let Some(color) = self.theme_colors.line_number {
+  let selection_star_style = if let Some(color) = self.theme_colors.selection_star {
    Style::new().fg(color)
   } else {
    Style::new()
   };
 
-  // TODO : color theme for cb_type
+  let line_number_color =
+   if self.active_area { self.theme_colors.line_number } else { self.theme_colors.line_number_inactive };
+
+  let line_number_style =
+   if let Some(color) = line_number_color { Style::new().fg(color) } else { Style::new() };
+
+  let cb_type_color =
+   if self.active_area { self.theme_colors.cb_type } else { self.theme_colors.cb_type_inactive };
+
   let cb_type_style =
-   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = cb_type_color { Style::new().fg(color) } else { Style::new() };
 
-  // TODO : color theme for date_time
-  let date_time_style = if let Some(color) = self.theme_colors.line_number {
-   Style::new().fg(color)
+  let date_time_color = if self.active_area {
+   self.theme_colors.date_time
   } else {
-   Style::new()
+   self.theme_colors.date_time_inactive
   };
+
+  let date_time_style =
+   if let Some(color) = date_time_color { Style::new().fg(color) } else { Style::new() };
 
   let text_style =
    if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };

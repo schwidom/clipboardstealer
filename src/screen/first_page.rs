@@ -644,11 +644,12 @@ impl ScreenPainter for ScreenFirstPage {
      line_count: Some(entries.len()),
      hoffset: self.scroller_main.get_hoffset(),
      theme_colors: theme_colors.clone(),
-     cursor_color: if self.active_area == ActiveArea::Second {
-      theme_colors.cursor_inactive
-     } else {
-      None
-     },
+     active_area : self.active_area == ActiveArea::Main,
+     // cursor_color: if self.active_area == ActiveArea::Second {
+     //  theme_colors.cursor_inactive
+     // } else {
+     //  None
+     // },
     };
 
     {
@@ -670,11 +671,12 @@ impl ScreenPainter for ScreenFirstPage {
      // hoffset: self.scroller_second.get_hoffset(),
      hoffset: hoffset_second,
      theme_colors: theme_colors.clone(),
-     cursor_color: if self.active_area == ActiveArea::Main {
-      theme_colors.cursor_inactive
-     } else {
-      None
-     },
+     active_area : self.active_area == ActiveArea::Second,
+     // cursor_color: if self.active_area == ActiveArea::Main {
+     //  theme_colors.cursor_inactive
+     // } else {
+     //  None
+     // },
     };
 
     if let Some(second_main_area) = rv.pl.get_second_main_area() {

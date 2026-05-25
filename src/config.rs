@@ -330,6 +330,11 @@ impl Config {
    && Self::color_eq(&a.border, &b.border)
    && Self::color_eq(&a.border_inactive, &b.border_inactive)
    && Self::color_eq(&a.menu, &b.menu)
+   && Self::color_eq(&a.pause, &b.pause)
+   && Self::color_eq(&a.selection_star, &b.selection_star)
+   && Self::color_eq(&a.cb_type, &b.cb_type)
+   && Self::color_eq(&a.cb_type_inactive, &b.cb_type_inactive)
+   && Self::color_eq(&a.date_time, &b.date_time)
  }
 
  fn color_eq(a: &Option<ratatui::style::Color>, b: &Option<ratatui::style::Color>) -> bool {
