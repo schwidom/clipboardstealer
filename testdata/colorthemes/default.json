@@ -1,0 +1,19 @@
+{
+  "name": "default",
+  "window_bg": null,
+  "window_fg": null,
+  "cursor": null,
+  "cursor_inactive": null,
+  "line_number": null,
+  "line_number_inactive": null,
+  "text": null,
+  "border": null,
+  "border_inactive": null,
+  "menu": null,
+  "pause": null,
+  "selection_star": null,
+  "cb_type": null,
+  "cb_type_inactive": null,
+  "date_time": null,
+  "date_time_inactive": null
+}

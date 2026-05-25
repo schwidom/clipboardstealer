@@ -1,0 +1,19 @@
+{
+  "name": "dracula",
+  "window_bg": "#222430",
+  "window_fg": "#F8F8F2",
+  "cursor": "#FF79C6",
+  "cursor_inactive": "#B2548A",
+  "line_number": "#6272A4",
+  "line_number_inactive": "#444F72",
+  "text": "#F8F8F2",
+  "border": "#BD93F9",
+  "border_inactive": "#6272A4",
+  "menu": "#5C617A",
+  "pause": "#FF0000",
+  "selection_star": "#FF79C6",
+  "cb_type": "#BD93F9",
+  "cb_type_inactive": "#8466AE",
+  "date_time": "#6272A4",
+  "date_time_inactive": "#444F72"
+}
