@@ -13,7 +13,7 @@ macro_rules! hex {
 // Stringify erzeugt "#" und "292E3A", concat! verbindet sie zu "#292E3A"
     (# $color:tt) => {
         // Stringify erzeugt "#" und "292E3A", concat! verbindet sie zu "#292E3A"
-        parse_hex_color(concat!(stringify!(#), stringify!($color)))
+        parse_hex_color_or_panic(concat!(stringify!(#), stringify!($color)))
     };
 }
 
@@ -26,7 +26,7 @@ fn test_parse_hex_color() {
  assert_eq!("123", stringify!(123));
  assert_eq!("123456", concat!(stringify!(123), stringify!(456)));
  // assert_eq!("", stringify!(#123e)); // error: expected at least one digit in exponent
- assert_eq!(Some(Color::Rgb(0x12, 0x34, 0x5e)), parse_hex_color("#12345e")); 
+ assert_eq!(Some(Color::Rgb(0x12, 0x34, 0x5e)), parse_hex_color("#12345e"));
 }
 
 struct CustomCounter(AtomicUsize);
@@ -125,6 +125,10 @@ fn parse_hex_color(s: &str) -> Option<Color> {
  } else {
   None
  }
+}
+
+fn parse_hex_color_or_panic(s: &str) -> Option<Color> {
+ Some(parse_hex_color(s).expect( &format!("wrong color : {}", s)))
 }
 
 fn color_to_hex(c: &Option<Color>) -> Option<String> {
@@ -304,9 +308,9 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    // UI-Vordergrund für Labels/Metadaten (Nord6 - hellstes Arktisweiß)
    window_fg: hex!(#ECEFF4),
    // Aktiver Cursor (Nord11 - Aurora Rot für maximale Sichtbarkeit)
-   cursor: hex!(#BF616A),
+   cursor: hex!( #cb6c76),
    // Inaktiver Cursor (Nord4 - dezentes Hellgrau, damit er nicht flimmert)
-   cursor_inactive: hex!(#D8DEE9),
+   cursor_inactive: hex!( #8d9ab1),
    // Zeilennummern (Nord3 - gedämpftes Graublau, tritt in den Hintergrund)
    line_number: hex!(#4C566A),
    // Reiner Fließtext (Nord5 - Standardweiß, minimal dunkler als window_fg für Hierarchie)
@@ -377,9 +381,9 @@ fn create_theme_colors() -> Vec<ThemeColors> {
    cursor_inactive: None,
    line_number: hex!(#667C83), // brighter than 0x58,0x6E,0x75
    text: hex!(#839496),
-   border: hex!(#3A9FE0), // a touch brighter than 0x26,0x8B,0xD2
+   border: hex!(#3A9FE0),          // a touch brighter than 0x26,0x8B,0xD2
    border_inactive: hex!(#667C83), // match line_number brightness
-   menu: hex!(#1E6174),   // brighter than 0x12,0x4F,0x61
+   menu: hex!(#1E6174),            // brighter than 0x12,0x4F,0x61
    pause: Some(COLOR_RED),
    selection_star: hex!(#B58900),
    cb_type: hex!(#3A9FE0),
@@ -924,7 +928,8 @@ fn create_theme_colors() -> Vec<ThemeColors> {
 
 pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
  let ret = SkipMap::<String, ThemeColors>::default();
- for tc in create_theme_colors().iter() {
+ let tcs = create_theme_colors();
+ for tc in tcs.iter() {
   let name = tc.name.clone();
   let mut tc = tc.clone();
 
