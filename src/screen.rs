@@ -551,8 +551,11 @@ impl<'a> LineStringsConfig<'a> {
    Style::new()
   };
 
-  let line_number_color =
-   if self.active_area { self.theme_colors.line_number } else { self.theme_colors.line_number_inactive };
+  let line_number_color = if self.active_area {
+   self.theme_colors.line_number
+  } else {
+   self.theme_colors.line_number_inactive
+  };
 
   let line_number_style =
    if let Some(color) = line_number_color { Style::new().fg(color) } else { Style::new() };
@@ -750,8 +753,15 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   // let paragraph =
   //  if !self.all_lines.wrapped { paragraph } else { paragraph.wrap(Wrap { trim: false }) };
 
-  let menu_style =
-   if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
+  let mut menu_style = Style::new();
+
+  if let Some(color) = self.theme_colors.menu {
+   menu_style = menu_style.fg(color);
+  }
+  if let Some(color) = self.theme_colors.window_bg_header_footer {
+   menu_style = menu_style.bg(color);
+  }
+
   Text::styled(self.helpline, menu_style).render(*self.rv.pl.get_title_area(), buf);
   paragraph.render(safe_area, buf);
 
@@ -783,8 +793,14 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   }
   // Paragraph::new("statusline").render( self.rv.pl.get_status_area().intersection(area), buf);
   let statusline = &self.statusline_heap;
-  let status_style =
-   if let Some(color) = self.theme_colors.menu { Style::new().fg(color) } else { Style::new() };
+  let mut status_style = Style::new();
+  if let Some(color) = self.theme_colors.menu {
+   status_style = status_style.fg(color);
+  }
+  if let Some(color) = self.theme_colors.window_bg_header_footer {
+   status_style = status_style.bg(color);
+  }
+
   if let Some(regex_edit_mode) = &self.regex_edit_mode {
    Paragraph::new("/".to_string() + regex_edit_mode + &self.regex_edit_mode_state + " (Esc/Enter)")
     .style(status_style)
@@ -795,6 +811,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
     .render(self.rv.pl.get_status_area().intersection(area), buf);
   } else if let Some(status_msg) = statusline.peek() {
    Paragraph::new(status_msg.text.clone() + &format!(" c({})", statusline.len()) + " (Esc)")
+    .style(status_style)
+    .render(self.rv.pl.get_status_area().intersection(area), buf);
+  } else {
+   Paragraph::new("")
     .style(status_style)
     .render(self.rv.pl.get_status_area().intersection(area), buf);
   }
