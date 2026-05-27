@@ -2,6 +2,7 @@
   "name": "default",
   "window_bg": null,
   "window_fg": null,
+  "window_bg_header_footer": null,
   "cursor": null,
   "cursor_inactive": null,
   "line_number": null,

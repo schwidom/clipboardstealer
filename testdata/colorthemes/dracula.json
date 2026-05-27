@@ -2,6 +2,7 @@
   "name": "dracula",
   "window_bg": "#222430",
   "window_fg": "#F8F8F2",
+  "window_bg_header_footer": "#000000",
   "cursor": "#FF79C6",
   "cursor_inactive": "#B2548A",
   "line_number": "#6272A4",
