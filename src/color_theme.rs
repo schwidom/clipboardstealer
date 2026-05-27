@@ -1069,7 +1069,7 @@ pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
 
   ret.insert(name.clone(), tc.clone());
 
-  if name != "default" {
+  if name != "default" && tc.light == Some(false) {
    let tc = brighten_tc_for_daylight(tc);
    ret.insert(tc.name.clone(), tc);
   }
@@ -1079,38 +1079,64 @@ pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
 
 fn brighten_tc_for_daylight(mut tc: ThemeColors) -> ThemeColors {
  tc.name.push_str("_dl");
- tc.menu = brighten_for_daylight(tc.menu);
- tc.line_number = brighten_for_daylight(tc.line_number);
- tc.text = brighten_for_daylight(tc.text);
- tc.window_fg = brighten_for_daylight(tc.window_fg);
- tc.border = brighten_for_daylight(tc.border);
- tc.border_inactive = brighten_for_daylight(tc.border_inactive);
- tc.cb_type = brighten_for_daylight(tc.cb_type);
- tc.cb_type_inactive = brighten_for_daylight(tc.cb_type_inactive);
- tc.date_time = brighten_for_daylight(tc.date_time);
+ tc.menu = brighten_for_daylight2(tc.light, tc.menu);
+ tc.line_number = brighten_for_daylight3(tc.light, tc.line_number_inactive, tc.line_number);
+ tc.line_number_inactive = brighten_for_daylight2(tc.light, tc.line_number_inactive);
+ tc.text = brighten_for_daylight2(tc.light, tc.text);
+ tc.window_fg = brighten_for_daylight2(tc.light, tc.window_fg);
+ tc.border = brighten_for_daylight3(tc.light, tc.border_inactive, tc.border);
+ tc.border_inactive = brighten_for_daylight2(tc.light, tc.border_inactive);
+ tc.cb_type = brighten_for_daylight3(tc.light, tc.cb_type_inactive, tc.cb_type);
+ tc.cb_type_inactive = brighten_for_daylight2(tc.light, tc.cb_type_inactive);
+ tc.date_time = brighten_for_daylight3(tc.light, tc.date_time_inactive, tc.date_time);
+ tc.date_time_inactive = brighten_for_daylight2(tc.light, tc.date_time_inactive);
  tc
 }
 
-fn brighten_for_daylight(color: Option<Color>) -> Option<Color> {
- color.map(|mut x: Color| {
-  const THRESHOLD: u8 = 175;
-  if let Color::Rgb(r, g, b) = x {
-   // ratatui provides no conversion from the enum to u8 u8 u8 for all enums
-   let rgb_max = max(max(r, g), b);
-   if rgb_max == 0 {
-   } else if rgb_max < THRESHOLD {
-    let r = r as f32;
-    let g = g as f32;
-    let b = b as f32;
-    let f = THRESHOLD as f32 / rgb_max as f32;
-    let r = (f * r).min(255.) as u8;
-    let g = (f * g).min(255.) as u8;
-    let b = (f * b).min(255.) as u8;
-    x = Color::Rgb(r, g, b);
+fn brighten_for_daylight2(light: Option<bool>, color: Option<Color>) -> Option<Color> {
+ brighten_for_daylight3(light, color, color)
+}
+
+fn brighten_for_daylight3(
+ light: Option<bool>,
+ mut ref_color: Option<Color>,
+ color: Option<Color>,
+) -> Option<Color> {
+ match light {
+  Some(true) => return color,
+  None => return color,
+  _ => {}
+ }
+
+ if ref_color.is_none() {
+  ref_color = color;
+ }
+
+ if let Some(Color::Rgb(r, g, b)) = ref_color {
+  let rgb_max_ref = max(max(r, g), b);
+
+  color.map(|mut x: Color| {
+   const THRESHOLD: u8 = 175;
+   if let Color::Rgb(r, g, b) = x {
+    // ratatui provides no conversion from the enum to u8 u8 u8 for all enums
+    let rgb_max = max(max(r, g), b);
+    if rgb_max == 0 {
+    } else if rgb_max_ref < THRESHOLD {
+     let r = r as f32;
+     let g = g as f32;
+     let b = b as f32;
+     let f = THRESHOLD as f32 / rgb_max_ref as f32;
+     let r = (f * r).min(255.) as u8;
+     let g = (f * g).min(255.) as u8;
+     let b = (f * b).min(255.) as u8;
+     x = Color::Rgb(r, g, b);
+    }
    }
-  }
-  x
- })
+   x
+  })
+ } else {
+  color
+ }
 }
 
 pub(crate) fn default_color_theme_name() -> String {
