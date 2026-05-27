@@ -454,10 +454,10 @@ impl ScreenPainter for ScreenFirstPage {
      .range(self.scroller_main.get_safe_windowrange())
      .enumerate()
     {
-     let mut appended_cbentry__acbeid: Option<AcbeId> = None;
+     let mut appended_cbentry_acbeid: Option<AcbeId> = None;
 
      if let FilteredCbsEntry::ACE(appended_cbentry) = entry {
-      appended_cbentry__acbeid = Some(appended_cbentry.id);
+      appended_cbentry_acbeid = Some(appended_cbentry.id);
       let mut bm = appended_cbentry.cbentry.borrow_mut();
       let scroller_mut = bm.get_scroller_mut();
       // etzwepgkfl
@@ -479,7 +479,7 @@ impl ScreenPainter for ScreenFirstPage {
      let cursor_star = if is_cursor { ">" } else { " " };
      let newest_marker_star = if cbs
       .get_last_psc_acbeid()
-      .is_some_and(|x| Some(x) == appended_cbentry__acbeid)
+      .is_some_and(|x| Some(x) == appended_cbentry_acbeid)
      {
       "l"
      } else {
@@ -644,7 +644,7 @@ impl ScreenPainter for ScreenFirstPage {
      line_count: Some(entries.len()),
      hoffset: self.scroller_main.get_hoffset(),
      theme_colors: theme_colors.clone(),
-     active_area : self.active_area == ActiveArea::Main,
+     active_area: self.active_area == ActiveArea::Main,
      // cursor_color: if self.active_area == ActiveArea::Second {
      //  theme_colors.cursor_inactive
      // } else {
@@ -671,7 +671,7 @@ impl ScreenPainter for ScreenFirstPage {
      // hoffset: self.scroller_second.get_hoffset(),
      hoffset: hoffset_second,
      theme_colors: theme_colors.clone(),
-     active_area : self.active_area == ActiveArea::Second,
+     active_area: self.active_area == ActiveArea::Second,
      // cursor_color: if self.active_area == ActiveArea::Main {
      //  theme_colors.cursor_inactive
      // } else {

@@ -21,9 +21,17 @@ use enum_iterator::all;
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
-use xcb_1::{
- x::{KeyButMask, QueryPointer},
- ConnError, Connection,
+use x11rb::{
+ self,
+ connection::Connection,
+ errors::ConnectionError,
+ protocol::xproto::ConnectionExt,
+ rust_connection::{self},
+};
+
+use x11rb::{
+ errors::{ConnectError, ReplyError},
+ protocol::xproto::KeyButMask,
 };
 
 use std::{
@@ -169,23 +177,33 @@ pub(crate) enum CbsError {
  UnitError,
  // X11Clipboard(X11Error),
  DISPLAY(x11_clipboard::error::Error),
- ConnError(ConnError),
+ // ConnError(ConnError),
+ ConnectError(ConnectError),
+ ConnectionError(ConnectionError),
+ ReplyError(ReplyError),
 }
 
-// impl From<()> for MyError {
-//  fn from(value: ()) -> Self {
-//   MyError::UnitError
-//  }
-// }
 impl From<x11_clipboard::error::Error> for CbsError {
  fn from(value: x11_clipboard::error::Error) -> Self {
   Self::DISPLAY(value)
  }
 }
 
-impl From<ConnError> for CbsError {
- fn from(value: ConnError) -> Self {
-  Self::ConnError(value)
+impl From<ConnectError> for CbsError {
+ fn from(value: ConnectError) -> Self {
+  Self::ConnectError(value)
+ }
+}
+
+impl From<ConnectionError> for CbsError {
+ fn from(value: ConnectionError) -> Self {
+  Self::ConnectionError(value)
+ }
+}
+
+impl From<ReplyError> for CbsError {
+ fn from(value: ReplyError) -> Self {
+  Self::ReplyError(value)
  }
 }
 
@@ -453,14 +471,20 @@ impl<'a> MouseThread<'a> {
     .unwrap_or(OsString::from(""))
     .to_string_lossy()
     .into();
-   let (connection, preferred_screen) = Connection::connect(Some(&displayname))?;
+   // let (connection, preferred_screen) = Connection::connect(Some(&displayname))?;
+   let (connection, preferred_screen): (rust_connection::RustConnection, usize) =
+    x11rb::connect(Some(&displayname))?;
    if debug {
     trace!("MouseThread goes into loop state");
    }
 
-   let setup = connection.get_setup();
-   let screen = setup.roots().nth(preferred_screen as usize).unwrap();
-   let rootwindow = screen.root();
+   // let setup = connection.get_setup();
+   // let setup = connection.
+   let setup = connection.setup();
+   // let screen = setup.roots().nth(preferred_screen as usize).unwrap();
+   let screen = &setup.roots[preferred_screen];
+   // let rootwindow = screen.root();
+   let rootwindow = screen.root;
 
    let mut mousebutton1pressed = false;
    let mut shift_pressed = false;
@@ -474,12 +498,16 @@ impl<'a> MouseThread<'a> {
     if !ass.is_running() {
      break;
     }
-    let cookie = connection.send_request(&QueryPointer { window: rootwindow });
-    let event = connection.wait_for_reply(cookie);
+    // let cookie = connection.send_request(&QueryPointer { window: rootwindow });
+    // let cookie = connection.stream().write(buf, fds);
+    let cookie = connection.query_pointer(rootwindow)?;
+    // let event = connection.wait_for_reply(cookie);
+    let event = cookie.reply()?;
 
-    let event_mask = event.unwrap().mask();
+    let event_mask = event.mask;
 
     let x = event_mask.contains(KeyButMask::BUTTON1);
+
     if x && !mousebutton1pressed {
      // ss.meh.lock()?.push_event(&MyEvent::MouseButton1(true))?;
      ass.sender.send(MyEvent::MouseButton1(true)).unwrap();

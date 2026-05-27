@@ -62,7 +62,6 @@
 
 ## Installation:
 
-- `apt-get install libxcb1-dev`  _(needed)_
 - `cargo install clipboardstealer`
 
 *This crate is not intended to be used as a library.*

@@ -153,9 +153,16 @@ impl ScreenPainter for ScreenColorThemeChooser {
       },
      }
     };
+    let mut namestyle = Style::new();
+    if let Some(color_bg) = tc.window_bg {
+     namestyle = namestyle.bg(color_bg);
+    }
+    if let Some(color_fg) = tc.window_fg {
+     namestyle = namestyle.fg(color_fg);
+    }
     let swatches = vec![
      Span {
-      style: Style::new(),
+      style: namestyle,
       content: format!(" {:20}", name).into(),
      },
      swatch(tc.window_bg),
