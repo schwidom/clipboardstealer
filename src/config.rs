@@ -303,39 +303,6 @@ impl Config {
   std::fs::write(path, json).map_err(|e| format!("Failed to write theme file: {}", e))
  }
 
- // pub(crate) fn load_theme_from_file(
- //  &self,
- //  path: &str,
- // ) -> Result<crate::color_theme::ColorTheme, String> {
- //  let content =
- //   std::fs::read_to_string(path).map_err(|e| format!("Failed to read theme file: {}", e))?;
- //  let theme_colors = crate::color_theme::ColorTheme::from_json(&content)?;
- //  for (_name, theme) in crate::color_theme::ColorTheme::all_themes() {
- //   let builtin = theme.get_colors();
- //   if Self::colors_equal(&builtin, &theme_colors) {
- //    return Ok(*theme);
- //   }
- //  }
- //  Err("No matching built-in theme found".to_string())
- // }
-
- // fn colors_equal(a: &crate::color_theme::ThemeColors, b: &crate::color_theme::ThemeColors) -> bool {
- //  Self::color_eq(&a.window_bg, &b.window_bg)
- //   && Self::color_eq(&a.window_fg, &b.window_fg)
- //   && Self::color_eq(&a.cursor, &b.cursor)
- //   && Self::color_eq(&a.cursor_inactive, &b.cursor_inactive)
- //   && Self::color_eq(&a.line_number, &b.line_number)
- //   && Self::color_eq(&a.text, &b.text)
- //   && Self::color_eq(&a.border, &b.border)
- //   && Self::color_eq(&a.border_inactive, &b.border_inactive)
- //   && Self::color_eq(&a.menu, &b.menu)
- //   && Self::color_eq(&a.pause, &b.pause)
- //   && Self::color_eq(&a.selection_star, &b.selection_star)
- //   && Self::color_eq(&a.cb_type, &b.cb_type)
- //   && Self::color_eq(&a.cb_type_inactive, &b.cb_type_inactive)
- //   && Self::color_eq(&a.date_time, &b.date_time)
- // }
-
  fn color_eq(a: &Option<ratatui::style::Color>, b: &Option<ratatui::style::Color>) -> bool {
   match (a, b) {
    (Some(ratatui::style::Color::Rgb(r1, g1, b1)), Some(ratatui::style::Color::Rgb(r2, g2, b2))) => {

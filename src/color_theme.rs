@@ -135,7 +135,7 @@ fn parse_hex_color(s: &str) -> Option<MyColor> {
 }
 
 fn parse_hex_color_or_panic(s: &str) -> Option<MyColor> {
- Some(parse_hex_color(s).expect(&format!("wrong color : {}", s)))
+ Some(parse_hex_color(s).unwrap_or_else(|| panic!("wrong color : {}", s)))
 }
 
 fn color_to_hex(c: &Option<MyColor>) -> Option<String> {

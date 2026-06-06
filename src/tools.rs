@@ -1,4 +1,4 @@
-use std; // f32::EPSILON
+ // f32::EPSILON
 use std::fmt::Display;
 
 use chrono::DateTime;
@@ -376,7 +376,6 @@ fn test_linearize_float() {
  assert!(f32::abs(f(255f32) - 255f32) < f32::EPSILON);
 }
 
-use ratatui::style::Color;
 
 use crate::color_theme::MyColor;
 
