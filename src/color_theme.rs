@@ -1,32 +1,19 @@
 use crossbeam_skiplist::SkipMap;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
-use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 
-use std::concat;
-use std::stringify;
-
-// #[macro_export]
-// macro_rules! hex {
-// // Stringify erzeugt "#" und "292E3A", concat! verbindet sie zu "#292E3A"
-//     (# $color:tt) => {
-//         // Stringify erzeugt "#" und "292E3A", concat! verbindet sie zu "#292E3A"
-//         parse_hex_color_or_panic(concat!(stringify!(#), stringify!($color)))
-//     };
-// }
-
 #[test]
 fn test_parse_hex_color() {
- assert_eq!(parse_hex_color("#123456"), Some(Color::Rgb(0x12, 0x34, 0x56)));
+ assert_eq!(parse_hex_color("#123456").map(|x| x.to_ratatui()), Some(Color::Rgb(0x12, 0x34, 0x56)));
  let x = parse_hex_color_or_panic("#123456");
- assert_eq!(x, Some(Color::Rgb(0x12, 0x34, 0x56)));
- assert_eq!(parse_hex_color_or_panic("#123456"), Some(Color::Rgb(0x12, 0x34, 0x56)));
+ assert_eq!(x, Some(MyColor(0x12, 0x34, 0x56)));
+ assert_eq!(parse_hex_color_or_panic("#123456"), Some(MyColor(0x12, 0x34, 0x56)));
  assert_eq!("123", stringify!(123));
  assert_eq!("123456", concat!(stringify!(123), stringify!(456)));
  // assert_eq!("", stringify!(#123e)); // error: expected at least one digit in exponent
- assert_eq!(Some(Color::Rgb(0x12, 0x34, 0x5e)), parse_hex_color("#12345e"));
+ assert_eq!(Some(MyColor(0x12, 0x34, 0x5e)), parse_hex_color("#12345e"));
 }
 
 struct CustomCounter(AtomicUsize);
@@ -38,6 +25,11 @@ impl CustomCounter {
 }
 
 use lazy_static::lazy_static;
+
+use crate::tools::brighten;
+use crate::tools::brightness;
+use crate::tools::linearize_float;
+use crate::tools::BRIGHTNESS_MAX;
 
 lazy_static! {
  static ref CUSTOM_COUNTER_OBJECT: CustomCounter = CustomCounter::new();
@@ -121,54 +113,61 @@ impl ThemeColorsJson {
  }
 }
 
-fn parse_hex_color(s: &str) -> Option<Color> {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MyColor(pub u8, pub u8, pub u8);
+
+impl MyColor {
+ pub(crate) fn to_ratatui(&self) -> Color {
+  Color::Rgb(self.0, self.1, self.2)
+ }
+}
+
+fn parse_hex_color(s: &str) -> Option<MyColor> {
  let s = s.trim_start_matches('#');
  if s.len() == 6 {
   let r = u8::from_str_radix(&s[0..2], 16).ok()?;
   let g = u8::from_str_radix(&s[2..4], 16).ok()?;
   let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-  Some(Color::Rgb(r, g, b))
+  Some(MyColor(r, g, b))
  } else {
   None
  }
 }
 
-fn parse_hex_color_or_panic(s: &str) -> Option<Color> {
+fn parse_hex_color_or_panic(s: &str) -> Option<MyColor> {
  Some(parse_hex_color(s).expect(&format!("wrong color : {}", s)))
 }
 
-fn color_to_hex(c: &Option<Color>) -> Option<String> {
+fn color_to_hex(c: &Option<MyColor>) -> Option<String> {
  match c {
-  Some(Color::Rgb(r, g, b)) => Some(format!("#{:02X}{:02X}{:02X}", r, g, b)),
+  Some(MyColor(r, g, b)) => Some(format!("#{:02X}{:02X}{:02X}", r, g, b)),
   _ => None,
  }
 }
 
-fn dim_color(light: Option<bool>, color: Option<Color>) -> Option<Color> {
+fn dim_color(light: Option<bool>, color: Option<MyColor>) -> Option<MyColor> {
  if let Some(light) = light {
   if !light {
    color.map(|c| match c {
-    Color::Rgb(r, g, b) => {
+    MyColor(r, g, b) => {
      let dim_factor = 0.7;
-     Color::Rgb(
+     MyColor(
       (r as f32 * dim_factor) as u8,
       (g as f32 * dim_factor) as u8,
       (b as f32 * dim_factor) as u8,
      )
     }
-    _ => c,
    })
   } else {
    color.map(|c| match c {
-    Color::Rgb(r, g, b) => {
+    MyColor(r, g, b) => {
      let dim_factor = 0.7;
-     Color::Rgb(
+     MyColor(
       u8::MAX - ((u8::MAX - r) as f32 * dim_factor) as u8,
       u8::MAX - ((u8::MAX - g) as f32 * dim_factor) as u8,
       u8::MAX - ((u8::MAX - b) as f32 * dim_factor) as u8,
      )
     }
-    _ => c,
    })
   }
  } else {
@@ -180,23 +179,23 @@ fn dim_color(light: Option<bool>, color: Option<Color>) -> Option<Color> {
 pub(crate) struct ThemeColors {
  pub(crate) name: String,
  pub(crate) light: Option<bool>,
- pub(crate) window_bg: Option<Color>,
- pub(crate) window_fg: Option<Color>,
- pub(crate) window_bg_header_footer: Option<Color>,
- pub(crate) cursor: Option<Color>,
- pub(crate) cursor_inactive: Option<Color>,
- pub(crate) line_number: Option<Color>,
- pub(crate) line_number_inactive: Option<Color>,
- pub(crate) text: Option<Color>,
- pub(crate) border: Option<Color>,
- pub(crate) border_inactive: Option<Color>,
- pub(crate) menu: Option<Color>,
- pub(crate) pause: Option<Color>,
- pub(crate) selection_star: Option<Color>,
- pub(crate) cb_type: Option<Color>,
- pub(crate) cb_type_inactive: Option<Color>,
- pub(crate) date_time: Option<Color>,
- pub(crate) date_time_inactive: Option<Color>,
+ pub(crate) window_bg: Option<MyColor>,
+ pub(crate) window_fg: Option<MyColor>,
+ pub(crate) window_bg_header_footer: Option<MyColor>,
+ pub(crate) cursor: Option<MyColor>,
+ pub(crate) cursor_inactive: Option<MyColor>,
+ pub(crate) line_number: Option<MyColor>,
+ pub(crate) line_number_inactive: Option<MyColor>,
+ pub(crate) text: Option<MyColor>,
+ pub(crate) border: Option<MyColor>,
+ pub(crate) border_inactive: Option<MyColor>,
+ pub(crate) menu: Option<MyColor>,
+ pub(crate) pause: Option<MyColor>,
+ pub(crate) selection_star: Option<MyColor>,
+ pub(crate) cb_type: Option<MyColor>,
+ pub(crate) cb_type_inactive: Option<MyColor>,
+ pub(crate) date_time: Option<MyColor>,
+ pub(crate) date_time_inactive: Option<MyColor>,
 }
 
 impl Default for ThemeColors {
@@ -262,13 +261,13 @@ impl ThemeColors {
  }
 }
 
-const COLOR_RED: Color = Color::Rgb(0xff, 0, 0);
-const COLOR_GREEN: Color = Color::Rgb(0, 0xff, 0);
+const COLOR_RED: MyColor = MyColor(0xff, 0, 0);
+const COLOR_GREEN: MyColor = MyColor(0, 0xff, 0);
 #[allow(unused)]
-const COLOR_BLUE: Color = Color::Rgb(0, 0, 0xff);
-const COLOR_BRIGHT_BLUE: Color = Color::Rgb(0x7f, 0x7f, 0xff);
-const COLOR_CYAN: Color = Color::Rgb(0, 0xff, 0xff);
-const COLOR_YELLOW: Color = Color::Rgb(0xff, 0xff, 0);
+const COLOR_BLUE: MyColor = MyColor(0, 0, 0xff);
+const COLOR_BRIGHT_BLUE: MyColor = MyColor(0x7f, 0x7f, 0xff);
+const COLOR_CYAN: MyColor = MyColor(0, 0xff, 0xff);
+const COLOR_YELLOW: MyColor = MyColor(0xff, 0xff, 0);
 
 fn create_theme_colors() -> Vec<ThemeColors> {
  vec![
@@ -1079,66 +1078,45 @@ pub(crate) fn all_themes_skipmap() -> SkipMap<String, ThemeColors> {
 
 fn brighten_tc_for_daylight(mut tc: ThemeColors) -> ThemeColors {
  tc.name.push_str("_dl");
- tc.menu = brighten_for_daylight2(tc.light, tc.menu);
- tc.line_number = brighten_for_daylight3(tc.light, tc.line_number_inactive, tc.line_number);
- tc.line_number_inactive = brighten_for_daylight2(tc.light, tc.line_number_inactive);
- tc.text = brighten_for_daylight2(tc.light, tc.text);
- tc.window_fg = brighten_for_daylight2(tc.light, tc.window_fg);
- tc.border = brighten_for_daylight3(tc.light, tc.border_inactive, tc.border);
- tc.border_inactive = brighten_for_daylight2(tc.light, tc.border_inactive);
- tc.cb_type = brighten_for_daylight3(tc.light, tc.cb_type_inactive, tc.cb_type);
- tc.cb_type_inactive = brighten_for_daylight2(tc.light, tc.cb_type_inactive);
- tc.date_time = brighten_for_daylight3(tc.light, tc.date_time_inactive, tc.date_time);
- tc.date_time_inactive = brighten_for_daylight2(tc.light, tc.date_time_inactive);
+ tc.menu = brighten_for_daylight4(tc.light, tc.menu);
+ tc.line_number = brighten_for_daylight4(tc.light, tc.line_number);
+ tc.line_number_inactive = brighten_for_daylight4(tc.light, tc.line_number_inactive);
+ tc.text = brighten_for_daylight4(tc.light, tc.text);
+ tc.window_fg = brighten_for_daylight4(tc.light, tc.window_fg);
+ tc.border = brighten_for_daylight4(tc.light, tc.border);
+ tc.border_inactive = brighten_for_daylight4(tc.light, tc.border_inactive);
+ tc.cb_type = brighten_for_daylight4(tc.light, tc.cb_type);
+ tc.cb_type_inactive = brighten_for_daylight4(tc.light, tc.cb_type_inactive);
+ tc.date_time = brighten_for_daylight4(tc.light, tc.date_time);
+ tc.date_time_inactive = brighten_for_daylight4(tc.light, tc.date_time_inactive);
  tc
 }
 
-fn brighten_for_daylight2(light: Option<bool>, color: Option<Color>) -> Option<Color> {
- brighten_for_daylight3(light, color, color)
-}
-
-fn brighten_for_daylight3(
- light: Option<bool>,
- mut ref_color: Option<Color>,
- color: Option<Color>,
-) -> Option<Color> {
+fn brighten_for_daylight4(light: Option<bool>, color: Option<MyColor>) -> Option<MyColor> {
  match light {
   Some(true) => return color,
   None => return color,
   _ => {}
  }
 
- if ref_color.is_none() {
-  ref_color = color;
+ const THRESHOLD_DARK: u16 = 100;
+ const THRESHOLD_RISEN: u16 = 100 * 3;
+ let f1 = linearize_float(0 as f32, 0 as f32, THRESHOLD_DARK as f32, THRESHOLD_RISEN as f32);
+ let f2 = linearize_float(
+  THRESHOLD_DARK as f32,
+  THRESHOLD_RISEN as f32,
+  BRIGHTNESS_MAX as f32,
+  BRIGHTNESS_MAX as f32,
+ );
+
+ if let Some(color) = color {
+  let old_brightness = brightness(color);
+  let new_brightness = if old_brightness < THRESHOLD_DARK {
+   f1(old_brightness as f32)
+  } else {
+   f2(old_brightness as f32)
+  };
+  return Some(brighten(color, new_brightness));
  }
-
- if let Some(Color::Rgb(r, g, b)) = ref_color {
-  let rgb_max_ref = max(max(r, g), b);
-
-  color.map(|mut x: Color| {
-   const THRESHOLD: u8 = 175;
-   if let Color::Rgb(r, g, b) = x {
-    // ratatui provides no conversion from the enum to u8 u8 u8 for all enums
-    let rgb_max = max(max(r, g), b);
-    if rgb_max == 0 {
-    } else if rgb_max_ref < THRESHOLD {
-     let r = r as f32;
-     let g = g as f32;
-     let b = b as f32;
-     let f = THRESHOLD as f32 / rgb_max_ref as f32;
-     let r = (f * r).min(255.) as u8;
-     let g = (f * g).min(255.) as u8;
-     let b = (f * b).min(255.) as u8;
-     x = Color::Rgb(r, g, b);
-    }
-   }
-   x
-  })
- } else {
-  color
- }
-}
-
-pub(crate) fn default_color_theme_name() -> String {
- "default".into()
+ None
 }

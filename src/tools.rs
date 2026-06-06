@@ -1,3 +1,4 @@
+use std; // f32::EPSILON
 use std::fmt::Display;
 
 use chrono::DateTime;
@@ -353,4 +354,57 @@ pub(crate) fn flatline(string: &str) -> String {
 
 pub(crate) fn tabfix(string: &str) -> String {
  string.replace("\t", "   ")
+}
+
+pub(crate) fn linearize_float(
+ start1: f32,
+ start2: f32,
+ end1: f32,
+ end2: f32,
+) -> impl Fn(f32) -> f32 {
+ let factor = (end2 - start2) / (end1 - start1);
+ move |x: f32| {
+  let zero = x - start1;
+  zero * factor + start2
+ }
+}
+
+#[test]
+fn test_linearize_float() {
+ let f = linearize_float(50f32, 100f32, 255f32, 255f32);
+ assert!(f32::abs(f(50f32) - 100f32) < f32::EPSILON);
+ assert!(f32::abs(f(255f32) - 255f32) < f32::EPSILON);
+}
+
+use ratatui::style::Color;
+
+use crate::color_theme::MyColor;
+
+pub(crate) const BRIGHTNESS_MAX: u16 = 255 * 3;
+
+pub(crate) fn brightness(rgb: MyColor) -> u16 {
+ match rgb {
+  MyColor(r, g, b) => r as u16 + b as u16 + g as u16,
+ }
+}
+
+// TODO : MyColor(R,G,B) einführen + .to_ratatui() -> Color
+
+pub(crate) fn brighten(rgb: MyColor, new_brightness: f32) -> MyColor {
+ let old_brightness = brightness(rgb);
+ let factor = new_brightness / old_brightness as f32;
+ match rgb {
+  MyColor(r, g, b) => {
+   let r2 = (r as f32 * factor) as u8;
+   let g2 = (g as f32 * factor) as u8;
+   let b2 = (b as f32 * factor) as u8;
+   MyColor(r2, g2, b2)
+  }
+ }
+}
+
+#[test]
+pub(crate) fn test_as_conversion_boundaries() {
+ assert_eq!(-1f32 as u8, 0);
+ assert_eq!(300f32 as u8, 255);
 }

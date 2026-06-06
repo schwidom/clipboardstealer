@@ -543,10 +543,10 @@ impl<'a> LineStringsConfig<'a> {
    if self.active_area { self.theme_colors.cursor } else { self.theme_colors.cursor_inactive };
 
   let cursor_style =
-   if let Some(color) = cursor_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = cursor_color { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   let selection_star_style = if let Some(color) = self.theme_colors.selection_star {
-   Style::new().fg(color)
+   Style::new().fg(color.to_ratatui())
   } else {
    Style::new()
   };
@@ -558,13 +558,13 @@ impl<'a> LineStringsConfig<'a> {
   };
 
   let line_number_style =
-   if let Some(color) = line_number_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = line_number_color { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   let cb_type_color =
    if self.active_area { self.theme_colors.cb_type } else { self.theme_colors.cb_type_inactive };
 
   let cb_type_style =
-   if let Some(color) = cb_type_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = cb_type_color { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   let date_time_color = if self.active_area {
    self.theme_colors.date_time
@@ -573,10 +573,10 @@ impl<'a> LineStringsConfig<'a> {
   };
 
   let date_time_style =
-   if let Some(color) = date_time_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = date_time_color { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   let text_style =
-   if let Some(color) = self.theme_colors.text { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = self.theme_colors.text { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   self
    .line_strings
@@ -663,10 +663,10 @@ impl<'a> LineStringsConfig<'a> {
   let border_color =
    if is_active { self.theme_colors.border } else { self.theme_colors.border_inactive };
   let border_style =
-   if let Some(color) = border_color { Style::new().fg(color) } else { Style::new() };
+   if let Some(color) = border_color { Style::new().fg(color.to_ratatui()) } else { Style::new() };
 
   let bg_style = if let Some(color) = self.theme_colors.window_bg {
-   Style::new().bg(color)
+   Style::new().bg(color.to_ratatui())
   } else {
    Style::new()
   };
@@ -717,7 +717,7 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
 
   let pause_style = if let Some(color) = self.theme_colors.pause {
    // Style::from(color)
-   Style::default().fg(color).bold()
+   Style::default().fg(color.to_ratatui()).bold()
   } else {
    Style::new()
   };
@@ -756,10 +756,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let mut menu_style = Style::new();
 
   if let Some(color) = self.theme_colors.menu {
-   menu_style = menu_style.fg(color);
+   menu_style = menu_style.fg(color.to_ratatui());
   }
   if let Some(color) = self.theme_colors.window_bg_header_footer {
-   menu_style = menu_style.bg(color);
+   menu_style = menu_style.bg(color.to_ratatui());
   }
 
   Text::styled(self.helpline, menu_style).render(*self.rv.pl.get_title_area(), buf);
@@ -795,10 +795,10 @@ impl<'a> Widget for TwoScreenDefaultWidget<'a> {
   let statusline = &self.statusline_heap;
   let mut status_style = Style::new();
   if let Some(color) = self.theme_colors.menu {
-   status_style = status_style.fg(color);
+   status_style = status_style.fg(color.to_ratatui());
   }
   if let Some(color) = self.theme_colors.window_bg_header_footer {
-   status_style = status_style.bg(color);
+   status_style = status_style.bg(color.to_ratatui());
   }
 
   if let Some(regex_edit_mode) = &self.regex_edit_mode {

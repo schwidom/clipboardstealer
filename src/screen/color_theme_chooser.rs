@@ -155,33 +155,33 @@ impl ScreenPainter for ScreenColorThemeChooser {
     };
     let mut namestyle = Style::new();
     if let Some(color_bg) = tc.window_bg {
-     namestyle = namestyle.bg(color_bg);
+     namestyle = namestyle.bg(color_bg.to_ratatui());
     }
     if let Some(color_fg) = tc.window_fg {
-     namestyle = namestyle.fg(color_fg);
+     namestyle = namestyle.fg(color_fg.to_ratatui());
     }
     let swatches = vec![
      Span {
       style: namestyle,
       content: format!(" {:20}", name).into(),
      },
-     swatch(tc.window_bg),
-     swatch(tc.window_fg),
-     swatch(tc.cursor),
-     swatch(tc.cursor_inactive),
-     swatch(tc.line_number),
-     swatch(tc.line_number_inactive),
-     swatch(tc.text),
-     swatch(tc.border),
-     swatch(tc.border_inactive),
-     swatch(tc.menu),
-     swatch(tc.selection_star),
-     swatch(tc.cb_type),
-     swatch(tc.cb_type_inactive),
-     swatch(tc.date_time),
-     swatch(tc.date_time_inactive),
+     swatch(tc.window_bg.map(|x| x.to_ratatui())),
+     swatch(tc.window_fg.map(|x| x.to_ratatui())),
+     swatch(tc.cursor.map(|x| x.to_ratatui())),
+     swatch(tc.cursor_inactive.map(|x| x.to_ratatui())),
+     swatch(tc.line_number.map(|x| x.to_ratatui())),
+     swatch(tc.line_number_inactive.map(|x| x.to_ratatui())),
+     swatch(tc.text.map(|x| x.to_ratatui())),
+     swatch(tc.border.map(|x| x.to_ratatui())),
+     swatch(tc.border_inactive.map(|x| x.to_ratatui())),
+     swatch(tc.menu.map(|x| x.to_ratatui())),
+     swatch(tc.selection_star.map(|x| x.to_ratatui())),
+     swatch(tc.cb_type.map(|x| x.to_ratatui())),
+     swatch(tc.cb_type_inactive.map(|x| x.to_ratatui())),
+     swatch(tc.date_time.map(|x| x.to_ratatui())),
+     swatch(tc.date_time_inactive.map(|x| x.to_ratatui())),
      Span::from("          "),
-     swatch(tc.pause),
+     swatch(tc.pause.map(|x| x.to_ratatui())),
     ];
 
     lines.push(LineStrings {
